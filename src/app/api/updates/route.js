@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUpdatesCollection } from "@/lib/mongo";
+import { getUpdatesCollection, getTagsCollection } from "@/lib/mongo";
 
 export async function GET() {
   try {
@@ -24,6 +24,8 @@ export async function POST(request) {
     const body = await request.json();
     const title = body?.title?.trim();
     const message = body?.message?.trim();
+    const happensAtInput = body?.happensAt;
+    const tagsInput = body?.tags;
 
     if (!title || !message) {
       return NextResponse.json(
@@ -32,9 +34,66 @@ export async function POST(request) {
       );
     }
 
+    let happensAt = null;
+    if (happensAtInput) {
+      const parsed = new Date(happensAtInput);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json(
+          { error: "Event time must be a valid date." },
+          { status: 400 },
+        );
+      }
+      happensAt = parsed;
+    }
+
+    const rawTags = Array.isArray(tagsInput)
+      ? tagsInput
+      : typeof tagsInput === "string"
+        ? tagsInput.split(",")
+        : [];
+
+    const tags = Array.from(
+      new Set(
+        rawTags
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+          .slice(0, 12),
+      ),
+    );
+
+    if (tags.length === 0) {
+      return NextResponse.json(
+        { error: "At least one tag is required." },
+        { status: 400 },
+      );
+    }
+
+    const normalizedTags = tags.map((tag) => tag.toLowerCase());
+    const tagsCollection = await getTagsCollection();
+    const matchedTags = await tagsCollection
+      .find({ normalizedName: { $in: normalizedTags } })
+      .project({ name: 1, color: 1, icon: 1, normalizedName: 1 })
+      .toArray();
+
+    if (matchedTags.length !== normalizedTags.length) {
+      return NextResponse.json(
+        { error: "One or more tags are invalid. Refresh and try again." },
+        { status: 400 },
+      );
+    }
+
+    const resolvedTags = matchedTags.map((tag) => ({
+      name: tag.name,
+      color: tag.color || "#22c55e",
+      icon: tag.icon || "🏷️",
+    }));
+
     const collection = await getUpdatesCollection();
     const now = new Date();
-    const doc = { title, message, createdAt: now };
+    const doc = { title, message, createdAt: now, tags: resolvedTags };
+    if (happensAt) {
+      doc.happensAt = happensAt;
+    }
 
     const { insertedId } = await collection.insertOne(doc);
 
