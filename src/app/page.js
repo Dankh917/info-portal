@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 const formatDate = (value) => {
   try {
@@ -163,9 +164,14 @@ export default function Home() {
             <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
               Updates
             </h1>
-            <span className="text-sm text-slate-300">
-              Stay aligned with the latest announcements.
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-300">
+                Stay aligned with the latest announcements.
+              </span>
+              <Link href="/documentation" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-semibold text-white/90 hover:bg-white/10">
+                Documentation
+              </Link>
+            </div>
           </div>
         </header>
 
