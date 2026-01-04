@@ -46,6 +46,39 @@ export default function Home() {
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState("");
 
+  const quickLinks = [
+    {
+      name: "Workday",
+      description: "Time off, payroll, and org info.",
+      url: "https://www.workday.com/",
+    },
+    {
+      name: "Notion",
+      description: "Team docs and project hubs.",
+      url: "https://www.notion.so/",
+    },
+    {
+      name: "Slack",
+      description: "Daily comms and quick updates.",
+      url: "https://slack.com/",
+    },
+    {
+      name: "Zoom",
+      description: "Meetings and live sessions.",
+      url: "https://zoom.us/",
+    },
+    {
+      name: "Confluence",
+      description: "Process docs and knowledge base.",
+      url: "https://www.atlassian.com/software/confluence",
+    },
+    {
+      name: "Google Drive",
+      description: "Shared files and team assets.",
+      url: "https://drive.google.com/",
+    },
+  ];
+
   useEffect(() => {
     const loadUpdates = async () => {
       setLoading(true);
@@ -376,6 +409,44 @@ export default function Home() {
                 {posting ? "Posting..." : "Post New Update"}
               </button>
             </form>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+                Quick links
+              </p>
+              <h2 className="text-2xl font-semibold">Company resources</h2>
+            </div>
+            <span className="text-sm text-slate-300">
+              Jump to the tools you use most.
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {quickLinks.map((link) => (
+              <a
+                key={link.name}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70 p-4 transition hover:-translate-y-1 hover:border-emerald-300/60 hover:shadow-lg hover:shadow-emerald-500/20"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/15 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
+                <div className="relative">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-lg font-semibold text-white">
+                      {link.name}
+                    </span>
+                    <span className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">
+                      Open
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-300">{link.description}</p>
+                </div>
+              </a>
+            ))}
           </div>
         </section>
       </main>

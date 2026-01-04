@@ -28,3 +28,9 @@ export async function getTagsCollection() {
   const db = client.db(dbName);
   return db.collection("Tags");
 }
+
+export async function getDocumentsCollection() {
+  const client = await clientPromise;
+  const db = client.db(dbName);
+  return db.collection("Documents");
+}
