@@ -42,3 +42,9 @@ export async function getDepartmentsCollection() {
   const db = client.db(dbName);
   return db.collection("Departments");
 }
+
+export async function getProjectsCollection() {
+  const client = await clientPromise;
+  const db = client.db(dbName);
+  return db.collection("Projects");
+}
