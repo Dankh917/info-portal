@@ -34,7 +34,7 @@ export async function GET(request) {
       .db(dbName)
       .collection("users")
       .find({})
-      .project({ email: 1, name: 1, image: 1, role: 1, department: 1 })
+      .project({ email: 1, name: 1, image: 1, role: 1, department: 1, departments: 1 })
       .sort({ email: 1 })
       .toArray();
 
@@ -59,9 +59,32 @@ export async function PATCH(request) {
     const id = body?.id;
     const email = body?.email?.trim();
     const role = body?.role?.trim();
-    const departmentInput = body?.department;
-    const department =
-      typeof departmentInput === "string" ? departmentInput.trim() : null;
+    const departmentsInput = body?.departments ?? body?.department;
+    const normalizeDepartments = (value) => {
+      if (Array.isArray(value)) {
+        return Array.from(
+          new Set(
+            value
+              .map((d) => d?.trim?.())
+              .filter(Boolean)
+              .slice(0, 8),
+          ),
+        );
+      }
+      if (typeof value === "string") {
+        return Array.from(
+          new Set(
+            value
+              .split(",")
+              .map((d) => d.trim())
+              .filter(Boolean)
+              .slice(0, 8),
+          ),
+        );
+      }
+      return [];
+    };
+    const departments = normalizeDepartments(departmentsInput);
 
     if (!id && !email) {
       return NextResponse.json(
@@ -77,19 +100,13 @@ export async function PATCH(request) {
       );
     }
 
-    if (department && department.length > 48) {
-      return NextResponse.json(
-        { error: "Department is too long." },
-        { status: 400 },
-      );
-    }
-
     const update = {};
     if (role) {
       update.role = role;
     }
-    if (department !== null) {
-      update.department = department || null;
+    if (departmentsInput !== undefined) {
+      update.departments = departments;
+      update.department = departments[0] || null;
     }
 
     if (Object.keys(update).length === 0) {

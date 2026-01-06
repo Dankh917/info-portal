@@ -10,6 +10,9 @@ export default function AdminUsersClient() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState({});
   const [filters, setFilters] = useState({ query: "" });
+  const [departments, setDepartments] = useState([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
+  const [departmentsError, setDepartmentsError] = useState("");
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -24,7 +27,27 @@ export default function AdminUsersClient() {
           throw new Error(data?.error || "Unable to load users.");
         }
 
-        setUsers(data.users ?? []);
+        const normalizeDepartments = (value) => {
+          if (Array.isArray(value)) {
+            return value
+              .map((d) => d?.trim?.())
+              .filter(Boolean);
+          }
+          if (typeof value === "string") {
+            return value
+              .split(",")
+              .map((d) => d.trim())
+              .filter(Boolean);
+          }
+          return [];
+        };
+
+        const withDepartments = (data.users ?? []).map((u) => ({
+          ...u,
+          departments: normalizeDepartments(u.departments ?? u.department),
+        }));
+
+        setUsers(withDepartments);
       } catch (err) {
         setError(err.message || "Unable to load users.");
       } finally {
@@ -35,6 +58,30 @@ export default function AdminUsersClient() {
     loadUsers();
   }, []);
 
+  useEffect(() => {
+    const loadDepartments = async () => {
+      setDepartmentsLoading(true);
+      setDepartmentsError("");
+
+      try {
+        const res = await fetch("/api/departments", { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to load departments.");
+        }
+
+        setDepartments(data.departments ?? []);
+      } catch (err) {
+        setDepartmentsError(err.message || "Unable to load departments.");
+      } finally {
+        setDepartmentsLoading(false);
+      }
+    };
+
+    loadDepartments();
+  }, []);
+
   const filteredUsers = useMemo(() => {
     const query = filters.query.trim().toLowerCase();
     if (!query) {
@@ -43,7 +90,9 @@ export default function AdminUsersClient() {
     return users.filter((user) => {
       const email = user.email?.toLowerCase() || "";
       const name = user.name?.toLowerCase() || "";
-      const department = user.department?.toLowerCase() || "";
+      const department = (user.departments || [])
+        .join(" ")
+        .toLowerCase();
       return (
         email.includes(query) ||
         name.includes(query) ||
@@ -52,7 +101,7 @@ export default function AdminUsersClient() {
     });
   }, [filters.query, users]);
 
-  const updateUser = async (user, nextRole, nextDepartment) => {
+  const updateUser = async (user, nextRole, nextDepartments) => {
     setSaving((prev) => ({ ...prev, [user._id]: true }));
     setError("");
 
@@ -63,7 +112,7 @@ export default function AdminUsersClient() {
         body: JSON.stringify({
           id: user._id,
           role: nextRole,
-          department: nextDepartment,
+          departments: nextDepartments,
         }),
       });
       const data = await res.json();
@@ -74,7 +123,7 @@ export default function AdminUsersClient() {
       setUsers((prev) =>
         prev.map((item) =>
           item._id === user._id
-            ? { ...item, role: nextRole, department: nextDepartment }
+            ? { ...item, role: nextRole, departments: nextDepartments }
             : item,
         ),
       );
@@ -169,7 +218,7 @@ export default function AdminUsersClient() {
                       <select
                         value={user.role || "user"}
                         onChange={(event) =>
-                          updateUser(user, event.target.value, user.department)
+                          updateUser(user, event.target.value, user.departments || [])
                         }
                         className="min-w-[120px] rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-300/50 focus:outline-none"
                         disabled={saving[user._id]}
@@ -183,26 +232,46 @@ export default function AdminUsersClient() {
                     </label>
 
                     <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Department
-                      <input
-                        type="text"
-                        value={user.department || ""}
-                        onChange={(event) =>
-                          setUsers((prev) =>
-                            prev.map((item) =>
-                              item._id === user._id
-                                ? { ...item, department: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                        onBlur={(event) =>
-                          updateUser(user, user.role || "user", event.target.value)
-                        }
-                        placeholder="e.g. HR"
-                        className="min-w-[160px] rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-300/50 focus:outline-none"
-                        disabled={saving[user._id]}
-                      />
+                      Departments
+                      <div className="flex flex-wrap gap-2">
+                        {departments.map((dept) => {
+                          const selected = user.departments?.includes(dept.name);
+                          return (
+                            <button
+                              key={dept._id || dept.name}
+                              type="button"
+                              onClick={() => {
+                                const next = selected
+                                  ? (user.departments || []).filter((d) => d !== dept.name)
+                                  : [...(user.departments || []), dept.name];
+                                setUsers((prev) =>
+                                  prev.map((item) =>
+                                    item._id === user._id ? { ...item, departments: next } : item,
+                                  ),
+                                );
+                                updateUser(user, user.role || "user", next);
+                              }}
+                              disabled={saving[user._id] || departmentsLoading}
+                              className={`rounded-full border px-3 py-1 text-[0.78rem] font-semibold uppercase tracking-[0.12em] transition ${
+                                selected
+                                  ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-100"
+                                  : "border-white/15 bg-slate-900/80 text-slate-100 hover:border-emerald-200/40"
+                              }`}
+                            >
+                              {dept.name}
+                            </button>
+                          );
+                        })}
+                        {!departmentsLoading && departments.length === 0 && (
+                          <span className="text-xs text-amber-200/80">No departments configured.</span>
+                        )}
+                      </div>
+                      {departmentsLoading && (
+                        <span className="text-[0.75rem] text-slate-400">Loading departments…</span>
+                      )}
+                      {departmentsError && (
+                        <span className="text-[0.7rem] text-amber-200/80">{departmentsError}</span>
+                      )}
                     </label>
                   </div>
                 </article>

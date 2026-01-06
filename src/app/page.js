@@ -40,12 +40,16 @@ export default function Home() {
     happensAtDate: "",
     happensAtTime: "",
     tags: [],
+    departments: ["General"],
   });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [tags, setTags] = useState([]);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
+  const [departmentsError, setDepartmentsError] = useState("");
 
   const quickLinks = [
     {
@@ -121,8 +125,29 @@ export default function Home() {
       }
     };
 
+    const loadDepartments = async () => {
+      setDepartmentsLoading(true);
+      setDepartmentsError("");
+
+      try {
+        const res = await fetch("/api/departments", { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to load departments.");
+        }
+
+        setDepartments(data.departments ?? []);
+      } catch (err) {
+        setDepartmentsError(err.message || "Unable to load departments.");
+      } finally {
+        setDepartmentsLoading(false);
+      }
+    };
+
     loadUpdates();
     loadTags();
+    loadDepartments();
   }, []);
 
   const toggleTag = (tagName) => {
@@ -132,6 +157,16 @@ export default function Home() {
         ? f.tags.filter((tag) => tag !== tagName)
         : [...f.tags, tagName];
       return { ...f, tags: nextTags };
+    });
+  };
+
+  const toggleDepartment = (deptName) => {
+    setForm((f) => {
+      const exists = f.departments.includes(deptName);
+      const nextDepartments = exists
+        ? f.departments.filter((dept) => dept !== deptName)
+        : [...f.departments, deptName];
+      return { ...f, departments: nextDepartments.length ? nextDepartments : ["General"] };
     });
   };
 
@@ -154,6 +189,7 @@ export default function Home() {
           message: form.message,
           happensAt,
           tags: form.tags,
+          departments: form.departments,
         }),
       });
 
@@ -171,6 +207,7 @@ export default function Home() {
         happensAtDate: "",
         happensAtTime: "",
         tags: [],
+        departments: ["General"],
       });
       setNotice("Update posted successfully.");
     } catch (err) {
@@ -185,7 +222,9 @@ export default function Home() {
     !form.title.trim() ||
     !form.message.trim() ||
     tagsLoading ||
-    form.tags.length === 0;
+    departmentsLoading ||
+    form.tags.length === 0 ||
+    form.departments.length === 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -262,6 +301,16 @@ export default function Home() {
                               Happens {formatDate(update.happensAt)}
                             </span>
                           )}
+                          {Array.isArray(update.departments) &&
+                            update.departments.map((dept) => (
+                              <span
+                                key={dept}
+                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200/30 bg-emerald-900/60 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-emerald-100 shadow-inner shadow-black/30"
+                              >
+                                <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                                {dept}
+                              </span>
+                            ))}
                           {Array.isArray(update.tags) &&
                             update.tags.map((tag) => {
                               const name = tag?.name || tag;
@@ -346,6 +395,55 @@ export default function Home() {
                     className="w-full rounded-lg border border-emerald-200/40 bg-emerald-950/60 px-3 py-2 text-base text-emerald-50 placeholder:text-emerald-50/50 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
                   />
                 </label>
+              </div>
+              <div className="flex flex-col gap-2 text-sm font-medium text-emerald-50/90">
+                <div className="flex items-center justify-between gap-2">
+                  <span>Departments (General is always allowed)</span>
+                  <span className="text-xs uppercase tracking-[0.16em] text-emerald-100/80">
+                    Required
+                  </span>
+                </div>
+                {departmentsError && (
+                  <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs font-normal text-amber-100">
+                    {departmentsError}
+                  </div>
+                )}
+                {departmentsLoading ? (
+                  <div className="space-y-2 rounded-lg border border-emerald-200/20 bg-emerald-950/50 p-3">
+                    <div className="h-10 rounded bg-emerald-200/20" />
+                    <div className="h-6 rounded bg-emerald-200/10" />
+                  </div>
+                ) : departments.length === 0 ? (
+                  <div className="rounded-lg border border-emerald-200/30 bg-emerald-950/60 px-4 py-3 text-xs font-normal text-emerald-100">
+                    No departments found. Ask an admin to seed defaults.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {departments.map((dept) => {
+                        const selected = form.departments.includes(dept.name);
+                        return (
+                          <button
+                            key={dept._id || dept.name}
+                            type="button"
+                            onClick={() => toggleDepartment(dept.name)}
+                            className={`inline-flex items-center gap-2 rounded-xl border border-emerald-200/40 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-50 shadow-inner shadow-black/30 transition hover:-translate-y-[1px] hover:shadow-emerald-500/30 ${
+                              selected ? "bg-emerald-500/20 ring-2 ring-white/60" : "bg-emerald-950/60"
+                            }`}
+                          >
+                            <span className="text-[0.78rem]">{dept.name}</span>
+                            {selected && <span className="text-[0.7rem] text-white/90">V</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {form.departments.length === 0 && (
+                      <p className="text-xs font-normal text-amber-100">
+                        Pick one or more departments to post this update.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-2 text-sm font-medium text-emerald-50/90">
                 <div className="flex items-center justify-between gap-2">

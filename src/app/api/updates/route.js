@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
-import { getUpdatesCollection, getTagsCollection } from "@/lib/mongo";
+import {
+  clientPromise,
+  getUpdatesCollection,
+  getTagsCollection,
+  getDepartmentsCollection,
+} from "@/lib/mongo";
 import { getToken } from "next-auth/jwt";
+import { ObjectId } from "mongodb";
+
+const dbName = process.env.MONGODB_DB || "info-portal";
 
 export async function GET(request) {
   try {
@@ -12,9 +20,47 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
+    // Refresh departments from DB each request so admin changes apply immediately.
+    let dbDepartments = [];
+    try {
+      const client = await clientPromise;
+      const usersCollection = client.db(dbName).collection("users");
+      const userQuery = token.sub ? { _id: new ObjectId(token.sub) } : { email: token.email };
+      const userRecord = await usersCollection.findOne(userQuery, {
+        projection: { departments: 1, department: 1 },
+      });
+      if (userRecord) {
+        if (Array.isArray(userRecord.departments)) {
+          dbDepartments = userRecord.departments.filter(Boolean);
+        } else if (userRecord.department) {
+          dbDepartments = [userRecord.department];
+        }
+      }
+    } catch (lookupError) {
+      console.error("Failed to load user departments", lookupError);
+    }
+
     const collection = await getUpdatesCollection();
+
+    const userDepartments = dbDepartments.length
+      ? dbDepartments
+      : Array.isArray(token.departments)
+        ? token.departments
+        : token.department
+          ? [token.department]
+          : [];
+
+    const filters = [
+      { departments: { $in: ["General"] } },
+      { authorId: token.sub },
+    ];
+
+    if (userDepartments.length) {
+      filters.push({ departments: { $in: userDepartments } });
+    }
+
     const updates = await collection
-      .find({})
+      .find({ $or: filters })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -43,6 +89,7 @@ export async function POST(request) {
     const message = body?.message?.trim();
     const happensAtInput = body?.happensAt;
     const tagsInput = body?.tags;
+    const departmentsInput = body?.departments;
 
     if (!title || !message) {
       return NextResponse.json(
@@ -102,12 +149,51 @@ export async function POST(request) {
     const resolvedTags = matchedTags.map((tag) => ({
       name: tag.name,
       color: tag.color || "#22c55e",
-      icon: tag.icon || "🏷️",
+      icon: tag.icon || "???",
     }));
+
+    const rawDepartments = Array.isArray(departmentsInput)
+      ? departmentsInput
+      : typeof departmentsInput === "string"
+        ? departmentsInput.split(",")
+        : [];
+
+    const departments = Array.from(
+      new Set(
+        rawDepartments
+          .map((dept) => dept.trim())
+          .filter(Boolean)
+          .slice(0, 8),
+      ),
+    );
+
+    const departmentsToUse = departments.length ? departments : ["General"];
+
+    const departmentsCollection = await getDepartmentsCollection();
+    const normalizedDepartments = departmentsToUse.map((dept) => dept.toLowerCase());
+    const matchedDepartments = await departmentsCollection
+      .find({ normalizedName: { $in: normalizedDepartments } })
+      .project({ name: 1, normalizedName: 1 })
+      .toArray();
+
+    if (matchedDepartments.length !== normalizedDepartments.length) {
+      return NextResponse.json(
+        { error: "One or more departments are invalid. Refresh and try again." },
+        { status: 400 },
+      );
+    }
 
     const collection = await getUpdatesCollection();
     const now = new Date();
-    const doc = { title, message, createdAt: now, tags: resolvedTags };
+    const doc = {
+      title,
+      message,
+      createdAt: now,
+      tags: resolvedTags,
+      departments: matchedDepartments.map((dept) => dept.name),
+      authorId: token.sub,
+      authorName: token.name || token.email || "Unknown",
+    };
     if (happensAt) {
       doc.happensAt = happensAt;
     }

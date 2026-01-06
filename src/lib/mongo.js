@@ -36,3 +36,9 @@ export async function getDocumentsCollection() {
   const db = client.db(dbName);
   return db.collection("Documents");
 }
+
+export async function getDepartmentsCollection() {
+  const client = await clientPromise;
+  const db = client.db(dbName);
+  return db.collection("Departments");
+}
