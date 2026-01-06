@@ -1,6 +1,8 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
+import Providers from "./providers";
+import UserMenu from "./user-menu";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,25 +25,28 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="app-shell">
-          <header className="app-nav">
-            <div className="app-nav__inner">
-              <div className="app-nav__brand">
-                <span className="app-nav__label">InfoPortal</span>
-                <span className="app-nav__title">Company Hub</span>
+        <Providers>
+          <div className="app-shell">
+            <header className="app-nav">
+              <div className="app-nav__inner">
+                <div className="app-nav__brand">
+                  <span className="app-nav__label">InfoPortal</span>
+                  <span className="app-nav__title">Company Hub</span>
+                </div>
+                <nav className="app-nav__links">
+                  <Link href="/" className="app-nav__link">
+                    Home
+                  </Link>
+                  <Link href="/documentation" className="app-nav__link">
+                    Documents
+                  </Link>
+                </nav>
               </div>
-              <nav className="app-nav__links">
-                <Link href="/" className="app-nav__link">
-                  Home
-                </Link>
-                <Link href="/documentation" className="app-nav__link">
-                  Documents
-                </Link>
-              </nav>
-            </div>
-          </header>
-          {children}
-        </div>
+            </header>
+            <UserMenu />
+            {children}
+          </div>
+        </Providers>
       </body>
     </html>
   );

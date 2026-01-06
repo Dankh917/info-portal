@@ -1,7 +1,7 @@
 ﻿"use client";
 
+import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 const formatDate = (value) => {
   try {
@@ -30,6 +30,7 @@ const tagStyle = (color) => {
 };
 
 export default function Home() {
+  const { data: session } = useSession();
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
@@ -193,17 +194,14 @@ export default function Home() {
           <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/80">
             InfoPortal
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
-              Updates
-            </h1>
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
+                Updates
+              </h1>
               <span className="text-sm text-slate-300">
                 Stay aligned with the latest announcements.
               </span>
-              <Link href="/documentation" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-semibold text-white/90 hover:bg-white/10">
-                Documentation
-              </Link>
             </div>
           </div>
         </header>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTagsCollection } from "@/lib/mongo";
+import { getToken } from "next-auth/jwt";
 
 const DEFAULT_TAGS = [
   { name: "Product", color: "#22c55e", icon: "📦" },
@@ -45,8 +46,16 @@ async function ensureDefaultTags(collection) {
   }
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
     const collection = await getTagsCollection();
     await ensureDefaultTags(collection);
     const tags = await collection
@@ -66,6 +75,18 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    if (token.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    }
+
     const body = await request.json();
     const name = body?.name?.trim();
 

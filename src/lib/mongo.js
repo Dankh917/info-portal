@@ -17,6 +17,8 @@ if (!clientPromise) {
   globalWithMongo._mongoClientPromise = clientPromise;
 }
 
+export { clientPromise };
+
 export async function getUpdatesCollection() {
   const client = await clientPromise;
   const db = client.db(dbName);

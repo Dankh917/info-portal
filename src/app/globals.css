@@ -20,7 +20,7 @@
 }
 
 body {
-  background: var(--background);
+  background: #020617;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -96,5 +96,9 @@ body {
   .app-nav__inner {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .app-nav__links {
+    width: 100%;
   }
 }
