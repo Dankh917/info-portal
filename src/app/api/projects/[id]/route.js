@@ -136,8 +136,15 @@ export async function GET(request, context) {
     }
 
     const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(project.departments) &&
+      project.departments.length > 0 &&
+      project.departments.every((dept) => pmDepartments.includes(dept));
     const assigned = (project.assignments || []).some((a) => a.userId === token.sub);
-    if (!isAdmin && !assigned) {
+    if (!isAdmin && !pmHasAccess && !assigned) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
@@ -146,7 +153,7 @@ export async function GET(request, context) {
       userId: a.userId?.toString?.() || a.userId,
     }));
 
-    const visibleAssignments = isAdmin
+    const visibleAssignments = isAdmin || pmHasAccess
       ? normalizedAssignments
       : normalizedAssignments.filter((a) => a.userId === token.sub);
 
@@ -194,7 +201,14 @@ export async function PATCH(request, context) {
 
     const isOwner = existingProject.createdBy?.id === token.sub;
     const isAdmin = token.role === "admin";
-    if (!isAdmin && !isOwner) {
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(existingProject.departments) &&
+      existingProject.departments.length > 0 &&
+      existingProject.departments.every((dept) => pmDepartments.includes(dept));
+    if (!isAdmin && !isOwner && !pmHasAccess) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
@@ -268,6 +282,12 @@ export async function PATCH(request, context) {
           { status: 400 },
         );
       }
+      if (isPm && resolvedDepartments.some((dept) => !pmDepartments.includes(dept))) {
+        return NextResponse.json(
+          { error: "PMs can only manage projects in their departments." },
+          { status: 403 },
+        );
+      }
       update.departments = resolvedDepartments;
     }
 
@@ -331,11 +351,31 @@ export async function DELETE(request, context) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    if (token.role !== "admin") {
+    const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+
+    if (!isAdmin && !isPm) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
     const collection = await getProjectsCollection();
+    if (isPm) {
+      const existingProject = await collection.findOne(
+        { _id: new ObjectId(id) },
+        { projection: { departments: 1 } },
+      );
+      if (!existingProject) {
+        return NextResponse.json({ error: "Project not found." }, { status: 404 });
+      }
+      const pmHasAccess =
+        Array.isArray(existingProject.departments) &&
+        existingProject.departments.length > 0 &&
+        existingProject.departments.every((dept) => pmDepartments.includes(dept));
+      if (!pmHasAccess) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+    }
     const result = await collection.deleteOne({ _id: new ObjectId(id) });
 
     if (result.deletedCount === 0) {

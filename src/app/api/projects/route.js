@@ -123,13 +123,20 @@ export async function GET(request) {
     }
 
     const collection = await getProjectsCollection();
+    const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
 
     const query =
-      token.role === "admin"
+      isAdmin
         ? {}
-        : {
-            "assignments.userId": token.sub,
-          };
+        : isPm
+          ? pmDepartments.length
+            ? { departments: { $in: pmDepartments } }
+            : { _id: null }
+          : {
+              "assignments.userId": token.sub,
+            };
 
     const projects = await collection
       .find(query)
@@ -156,7 +163,7 @@ export async function GET(request) {
       }));
 
       const filteredAssignments =
-        token.role === "admin"
+        isAdmin || isPm
           ? baseAssignments
           : baseAssignments.filter((a) => a.userId === token.sub);
 
@@ -191,8 +198,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    if (token.role !== "admin") {
+    const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+
+    if (!isAdmin && !isPm) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    }
+    if (isPm && pmDepartments.length === 0) {
+      return NextResponse.json({ error: "No departments assigned." }, { status: 403 });
     }
 
     const body = await request.json();
@@ -231,6 +245,12 @@ export async function POST(request) {
       return NextResponse.json(
         { error: "One or more departments are invalid." },
         { status: 400 },
+      );
+    }
+    if (isPm && resolvedDepartments.some((dept) => !pmDepartments.includes(dept))) {
+      return NextResponse.json(
+        { error: "PMs can only create projects in their departments." },
+        { status: 403 },
       );
     }
 

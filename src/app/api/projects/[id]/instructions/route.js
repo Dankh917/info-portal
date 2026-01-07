@@ -35,8 +35,15 @@ export async function POST(request, context) {
     }
 
     const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(project.departments) &&
+      project.departments.length > 0 &&
+      project.departments.every((dept) => pmDepartments.includes(dept));
     const isAssigned = (project.assignments || []).some((a) => a.userId === token.sub);
-    if (!isAdmin && !isAssigned) {
+    if (!isAdmin && !pmHasAccess && !isAssigned) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
@@ -44,9 +51,7 @@ export async function POST(request, context) {
       _id: new ObjectId(),
       text,
       authorId: token.sub,
-      authorName: token.name || token.email || "User",
-      createdAt: new Date(),
-      done: false,
+      authorName: token.name || token.      done: false,
       doneAt: null,
     };
 
@@ -131,9 +136,16 @@ export async function PATCH(request, context) {
     }
 
     const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(project.departments) &&
+      project.departments.length > 0 &&
+      project.departments.every((dept) => pmDepartments.includes(dept));
     const isOwner = project.createdBy?.id === token.sub;
     const isAssigned = (project.assignments || []).some((a) => a.userId === token.sub);
-    if (!isAdmin && !isOwner && !isAssigned) {
+    if (!isAdmin && !isOwner && !pmHasAccess && !isAssigned) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
@@ -153,6 +165,7 @@ export async function PATCH(request, context) {
       const canEdit =
         isAdmin ||
         isOwner ||
+        pmHasAccess ||
         targetInstruction.authorId === token.sub;
       if (!canEdit) {
         return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -195,6 +208,7 @@ export async function PATCH(request, context) {
       const canEdit =
         isAdmin ||
         isOwner ||
+        pmHasAccess ||
         targetInstruction.authorId === token.sub;
       if (!canEdit) {
         return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -256,8 +270,15 @@ export async function DELETE(request, context) {
     }
 
     const isAdmin = token.role === "admin";
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(project.departments) &&
+      project.departments.length > 0 &&
+      project.departments.every((dept) => pmDepartments.includes(dept));
     const isOwner = project.createdBy?.id === token.sub;
-    if (!isAdmin && !isOwner) {
+    if (!isAdmin && !isOwner && !pmHasAccess) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
@@ -301,6 +322,23 @@ export async function DELETE(request, context) {
     console.error("Failed to delete instruction", error);
     return NextResponse.json(
       { error: "Unable to delete instruction right now." },
+tResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Failed to update instruction", error);
+    return NextResponse.json(
+      { error: "Unable to update instruction right now." },
+) {
+    console.error("Failed to update instruction", error);
+    return NextResponse.json(
+      { error: "Unable to update instruction right now." },
+) {
+    console.error("Failed to update instruction", error);
+    return NextResponse.json(
+      { error: "Unable to update instruction right now." },
+ {
+    console.error("Failed to update instruction", error);
+    return NextResponse.json(
+      { error: "Unable to update instruction right now." },
       { status: 500 },
     );
   }

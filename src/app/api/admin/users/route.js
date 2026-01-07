@@ -22,18 +22,48 @@ async function requireAdmin(request) {
   return { token };
 }
 
+async function requireAdminOrPm(request) {
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+
+  if (!token) {
+    return { error: NextResponse.json({ error: "Unauthorized." }, { status: 401 }) };
+  }
+
+  if (token.role !== "admin" && token.role !== "pm") {
+    return { error: NextResponse.json({ error: "Forbidden." }, { status: 403 }) };
+  }
+
+  return { token };
+}
+
 export async function GET(request) {
-  const { error } = await requireAdmin(request);
+  const { error, token } = await requireAdminOrPm(request);
   if (error) {
     return error;
   }
 
   try {
     const client = await clientPromise;
+    const isPm = token.role === "pm";
+    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+    if (isPm && pmDepartments.length === 0) {
+      return NextResponse.json({ users: [] });
+    }
+    const query = isPm
+      ? {
+          $or: [
+            { departments: { $in: pmDepartments } },
+            { department: { $in: pmDepartments } },
+          ],
+        }
+      : {};
     const users = await client
       .db(dbName)
       .collection("users")
-      .find({})
+      .find(query)
       .project({ email: 1, name: 1, image: 1, role: 1, department: 1, departments: 1 })
       .sort({ email: 1 })
       .toArray();
@@ -93,9 +123,9 @@ export async function PATCH(request) {
       );
     }
 
-    if (role && !["user", "admin"].includes(role)) {
+    if (role && !["user", "pm", "admin"].includes(role)) {
       return NextResponse.json(
-        { error: "Role must be user or admin." },
+        { error: "Role must be user, pm, or admin." },
         { status: 400 },
       );
     }

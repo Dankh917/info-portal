@@ -82,7 +82,12 @@ function ProjectCard({ project, onSelect, selected }) {
 export default function ProjectsPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
+  const isPm = session?.user?.role === "pm";
   const userId = session?.user?.id;
+  const userDepartments = Array.isArray(session?.user?.departments)
+    ? session.user.departments
+    : [];
+  const canManageProjects = isAdmin || isPm;
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -210,7 +215,7 @@ export default function ProjectsPage() {
   };
 
   const loadUsers = async () => {
-    if (!isAdmin) return;
+    if (!canManageProjects) return;
     try {
       const res = await fetch("/api/admin/users", { cache: "no-store" });
       const data = await res.json();
@@ -250,12 +255,12 @@ export default function ProjectsPage() {
   }, [session?.user?.role]);
 
   const filteredUsers = useMemo(() => {
-    if (!isAdmin || form.departments.length === 0) return users;
+    if (!canManageProjects || form.departments.length === 0) return users;
     return users.filter((u) => {
       const depts = Array.isArray(u.departments) ? u.departments : u.department ? [u.department] : [];
       return depts.some((d) => form.departments.includes(d));
     });
-  }, [users, isAdmin, form.departments]);
+  }, [users, canManageProjects, form.departments]);
 
   const toggleDepartment = (dept) => {
     setForm((prev) => {
@@ -313,6 +318,9 @@ export default function ProjectsPage() {
       };
       if (!payload.departments.length) {
         throw new Error("Select at least one department.");
+      }
+      if (isPm && payload.departments.some((dept) => !userDepartments.includes(dept))) {
+        throw new Error("PMs can only create projects in their departments.");
       }
 
       const res = await fetch(editingId ? `/api/projects/${editingId}` : "/api/projects", {
@@ -461,11 +469,26 @@ export default function ProjectsPage() {
     return (selected.assignments || []).find((a) => a.userId === userId) || null;
   }, [selected, userId]);
 
+  const availableDepartments = useMemo(() => {
+    if (isPm) {
+      return departments.filter((dept) => userDepartments.includes(dept.name));
+    }
+    return departments;
+  }, [departments, isPm, userDepartments]);
+
   const isOwner = selected?.createdBy?.id === userId;
-  const canDeleteInstruction = isAdmin || isOwner;
+  const canManageSelected =
+    !!selected &&
+    (isAdmin ||
+      (isPm &&
+        Array.isArray(selected.departments) &&
+        selected.departments.length > 0 &&
+        selected.departments.every((dept) => userDepartments.includes(dept))));
+
+  const canDeleteInstruction = isAdmin || isOwner || (isPm && canManageSelected);
 
   const canEditInstruction = (insAuthorId) => {
-    return isAdmin || isOwner || insAuthorId === userId;
+    return isAdmin || isOwner || (isPm && canManageSelected) || insAuthorId === userId;
   };
 
   const visibleProjects = projects;
@@ -484,10 +507,12 @@ export default function ProjectsPage() {
             <span className="text-sm text-slate-300">
               {isAdmin
                 ? "Browse and manage projects across all departments."
-                : "See the projects you are assigned to."}
+                : isPm
+                  ? "Manage projects for your departments."
+                  : "See the projects you are assigned to."}
             </span>
           </div>
-          {isAdmin && (
+          {canManageProjects && (
             <button
               type="button"
               onClick={resetForm}
@@ -522,7 +547,7 @@ export default function ProjectsPage() {
               </div>
             ) : visibleProjects.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center text-slate-300">
-                {isAdmin ? "No projects yet. Create one to get started." : "No project assigned."}
+                {canManageProjects ? "No projects yet. Create one to get started." : "No project assigned."}
               </div>
             ) : (
               <div className="grid gap-3">
@@ -587,7 +612,7 @@ export default function ProjectsPage() {
                 <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-white">Assignments</h3>
-                    {isAdmin && (
+                    {canManageSelected && (
                       <button
                         type="button"
                         onClick={() => startEdit(selected)}
@@ -744,7 +769,7 @@ export default function ProjectsPage() {
                     </div>
                   )}
                   <div className="flex flex-col gap-2">
-                    {isAdmin && (
+                    {canManageSelected && (
                       <div className="flex items-center gap-3 text-xs text-emerald-50">
                         <label className="flex items-center gap-1">
                           <input
@@ -807,7 +832,7 @@ export default function ProjectsPage() {
                             ? "Update instruction"
                             : "Add instruction"}
                       </button>
-                      {instructionScope === "assignment" && !currentAssignment && !isAdmin && (
+                      {instructionScope === "assignment" && !currentAssignment && !canManageSelected && (
                         <span className="text-xs text-amber-100">
                           You must be assigned to add instructions.
                         </span>
@@ -824,7 +849,7 @@ export default function ProjectsPage() {
           </div>
         </section>
 
-        {isAdmin && (
+        {canManageProjects && (
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
             <div className="mb-3 flex items-center justify-between">
               <div>
@@ -918,7 +943,7 @@ export default function ProjectsPage() {
                   {deptError && <span className="text-xs text-amber-200">{deptError}</span>}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {departments.map((dept) => {
+                  {availableDepartments.map((dept) => {
                     const selectedDept = form.departments.includes(dept.name);
                     return (
                       <button
@@ -935,6 +960,11 @@ export default function ProjectsPage() {
                       </button>
                     );
                   })}
+                  {isPm && availableDepartments.length === 0 && (
+                    <p className="text-xs text-amber-100">
+                      No departments assigned. Ask an admin to add one.
+                    </p>
+                  )}
                 </div>
               </div>
 
