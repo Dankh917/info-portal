@@ -162,10 +162,7 @@ export async function GET(request) {
         userId: a.userId?.toString?.() || a.userId,
       }));
 
-      const filteredAssignments =
-        isAdmin || isPm
-          ? baseAssignments
-          : baseAssignments.filter((a) => a.userId === token.sub);
+      const filteredAssignments = baseAssignments;
 
       return {
         ...p,

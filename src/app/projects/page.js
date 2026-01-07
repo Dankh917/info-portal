@@ -26,26 +26,26 @@ const formatDate = (value) => {
   }
 };
 
-function ProjectCard({ project, onSelect, selected }) {
+function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(project)}
-      className={`rounded-2xl border px-4 py-4 text-left shadow-inner transition ${
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(project);
+        }
+      }}
+      className={`rounded-2xl border px-4 py-4 text-left shadow-inner transition transform ${
         selected
-          ? "border-emerald-400/60 bg-emerald-900/20 shadow-emerald-500/20"
+          ? "border-emerald-400/60 bg-emerald-900/20 shadow-emerald-500/20 scale-[1.01]"
           : "border-white/10 bg-slate-900/70 hover:border-emerald-400/30"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-white">{project.title}</h3>
-        <span
-          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
-            statusColor[project.status] || "bg-slate-800 text-slate-100 border-white/10"
-          }`}
-        >
-          {STATUS_OPTIONS.find((s) => s.value === project.status)?.label || project.status}
-        </span>
       </div>
       <p className="mt-1 text-sm text-slate-300 line-clamp-2">
         {project.summary || "No summary"}
@@ -75,7 +75,33 @@ function ProjectCard({ project, onSelect, selected }) {
             </span>
           ))}
       </div>
-    </button>
+      {selected && canManage && (
+        <div className="mt-4 border-t border-white/10 pt-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit(project);
+              }}
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-emerald-100 transition hover:border-emerald-300/50 hover:text-emerald-50"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(project._id);
+              }}
+              className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-rose-100 transition hover:border-rose-300/60 hover:text-rose-50"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -116,6 +142,7 @@ export default function ProjectsPage() {
   const [formError, setFormError] = useState("");
   const [formNotice, setFormNotice] = useState("");
   const [editingId, setEditingId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
 
   const [instructionText, setInstructionText] = useState("");
   const [instructionScope, setInstructionScope] = useState("assignment");
@@ -125,6 +152,7 @@ export default function ProjectsPage() {
   const [instructionUpdatingId, setInstructionUpdatingId] = useState("");
   const [instructionDeletingId, setInstructionDeletingId] = useState("");
   const [editingInstructionId, setEditingInstructionId] = useState("");
+  const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false);
 
   const loadProjects = async (options = {}) => {
     const { silent = false } = options;
@@ -293,13 +321,17 @@ export default function ProjectsPage() {
     });
     setFormError("");
     setFormNotice("");
+    setShowForm(true);
   };
 
-  const resetForm = () => {
+  const resetForm = (options = {}) => {
     setEditingId(null);
     setForm(blankForm);
     setFormError("");
     setFormNotice("");
+    if (options.hide) {
+      setShowForm(false);
+    }
   };
 
   const submitProject = async (event) => {
@@ -515,7 +547,10 @@ export default function ProjectsPage() {
           {canManageProjects && (
             <button
               type="button"
-              onClick={resetForm}
+              onClick={() => {
+                resetForm();
+                setShowForm(true);
+              }}
               className="rounded-full border border-emerald-300/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-50 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-[1px]"
             >
               New project
@@ -523,7 +558,11 @@ export default function ProjectsPage() {
           )}
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+        <section
+          className={`grid gap-6 ${
+            selected ? "lg:grid-cols-[0.7fr_1.3fr]" : "lg:grid-cols-[1.05fr_0.95fr]"
+          }`}
+        >
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Latest projects</h2>
@@ -552,12 +591,15 @@ export default function ProjectsPage() {
             ) : (
               <div className="grid gap-3">
                 {visibleProjects.map((project) => (
-                    <ProjectCard
-                      key={project._id}
-                      project={project}
-                      selected={selected?._id === project._id}
-                      onSelect={handleSelect}
-                    />
+                  <ProjectCard
+                    key={project._id}
+                    project={project}
+                    selected={selected?._id === project._id}
+                    onSelect={handleSelect}
+                    canManage={canManageProjects}
+                    onEdit={startEdit}
+                    onDelete={deleteProject}
+                  />
                 ))}
               </div>
             )}
@@ -574,13 +616,6 @@ export default function ProjectsPage() {
                     <h2 className="text-2xl font-semibold text-white">{selected.title}</h2>
                     <p className="text-sm text-emerald-100/80">{selected.summary || "No summary"}</p>
                   </div>
-                  <span
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
-                      statusColor[selected.status] || "bg-slate-800 text-slate-100 border-white/10"
-                    }`}
-                  >
-                    {STATUS_OPTIONS.find((s) => s.value === selected.status)?.label || selected.status}
-                  </span>
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs text-emerald-100/90">
@@ -611,12 +646,12 @@ export default function ProjectsPage() {
 
                 <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-white">Assignments</h3>
+                    <h3 className="text-sm font-semibold text-white">Workers on this project</h3>
                     {canManageSelected && (
                       <button
                         type="button"
                         onClick={() => startEdit(selected)}
-                        className="text-xs font-semibold text-emerald-100 underline"
+                        className="inline-flex items-center rounded-md border border-emerald-300/30 bg-emerald-500/10 px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-emerald-50 transition hover:-translate-y-[1px] hover:border-emerald-200/60 hover:bg-emerald-500/20 cursor-pointer"
                       >
                         Edit project
                       </button>
@@ -648,11 +683,6 @@ export default function ProjectsPage() {
                                     >
                                       {ins.text}
                                     </div>
-                                    {ins.authorName && (
-                                      <span className="text-[0.68rem] text-emerald-100/70">
-                                        by {ins.authorName}
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {userId === a.userId && (
@@ -662,13 +692,13 @@ export default function ProjectsPage() {
                                           toggleInstructionDone(a.userId, ins._id, !ins.done)
                                         }
                                         disabled={instructionUpdatingId === ins._id}
-                                        className={`text-[0.7rem] underline disabled:opacity-60 ${
+                                        className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-emerald-300/30 hover:-translate-y-[1px] cursor-pointer disabled:opacity-60 ${
                                           ins.done
-                                            ? "font-bold text-emerald-200"
-                                            : "font-semibold text-red-200"
+                                            ? "bg-emerald-500/15 text-emerald-50 hover:bg-emerald-500/25"
+                                            : "bg-amber-500/15 text-amber-50 hover:bg-amber-500/25"
                                         }`}
                                       >
-                                        {ins.done ? "Done" : "Undone"}
+                                        {ins.done ? "Reopen" : "Mark done"}
                                       </button>
                                     )}
                                     {canEditInstruction(ins.authorId) && (
@@ -680,7 +710,7 @@ export default function ProjectsPage() {
                                           setEditingInstructionId(ins._id || "");
                                           setInstructionText(ins.text || "");
                                         }}
-                                        className="text-[0.7rem] font-semibold text-emerald-100 underline"
+                                        className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
                                       >
                                         Edit
                                       </button>
@@ -692,7 +722,7 @@ export default function ProjectsPage() {
                                           deleteInstruction("assignment", ins._id, a.userId)
                                         }
                                         disabled={instructionDeletingId === ins._id}
-                                        className="text-[0.7rem] font-semibold text-red-200 underline disabled:opacity-60"
+                                        className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-rose-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-rose-500/20 focus:outline-none focus:ring-2 focus:ring-rose-300/30 cursor-pointer disabled:opacity-60"
                                       >
                                         Delete
                                       </button>
@@ -710,60 +740,9 @@ export default function ProjectsPage() {
                   )}
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4">
-                  <h3 className="mb-2 text-sm font-semibold text-white">General instructions</h3>
-                  {Array.isArray(selected.generalInstructions) && selected.generalInstructions.length > 0 ? (
-                    <ul className="space-y-2 text-sm text-emerald-50/90">
-                      {selected.generalInstructions.map((ins) => (
-                        <li
-                          key={ins._id || ins.text}
-                          className="flex items-start justify-between gap-2 rounded border border-emerald-300/20 bg-emerald-500/10 px-3 py-2"
-                        >
-                          <div>
-                            <div className="text-emerald-50">{ins.text}</div>
-                            {ins.authorName && (
-                              <div className="text-[0.7rem] text-emerald-100/70 mt-1">
-                                {ins.authorName}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {canEditInstruction(ins.authorId) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setInstructionScope("general");
-                                  setInstructionTarget("");
-                                  setEditingInstructionId(ins._id || "");
-                                  setInstructionText(ins.text || "");
-                                }}
-                                className="text-[0.7rem] font-semibold text-emerald-100 underline"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            {canDeleteInstruction && (
-                              <button
-                                type="button"
-                                onClick={() => deleteInstruction("general", ins._id)}
-                                disabled={instructionDeletingId === ins._id}
-                                className="text-[0.7rem] font-semibold text-red-200 underline disabled:opacity-60"
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-slate-300">No general instructions yet.</p>
-                  )}
-                </div>
-
                 {canManageSelected && (
                   <div className="rounded-xl border border-white/10 bg-emerald-900/40 p-4">
-                    <h3 className="text-sm font-semibold text-white mb-2">Add instruction</h3>
+                    <h3 className="text-sm font-semibold text-white mb-2">Add assignment</h3>
                     {instructionError && (
                       <div className="mb-2 rounded border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                         {instructionError}
@@ -798,24 +777,104 @@ export default function ProjectsPage() {
                         </label>
                       </div>
                       {instructionScope === "assignment" && (
-                        <select
-                          value={instructionTarget || currentAssignment?.userId || ""}
-                          onChange={(e) => setInstructionTarget(e.target.value)}
-                          className="rounded-lg border border-emerald-300/40 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-50 focus:border-emerald-200/70 focus:outline-none"
-                        >
-                          <option value="">Choose assignee</option>
-                          {(selected.assignments || []).map((a) => (
-                            <option key={a.userId} value={a.userId}>
-                              {a.name || a.email || "User"}
-                            </option>
-                          ))}
-                        </select>
+                        <div>
+                          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/70">
+                            Choose assignee
+                          </div>
+                          <div
+                            className="relative"
+                            onBlur={(event) => {
+                              if (!event.currentTarget.contains(event.relatedTarget)) {
+                                setAssigneeMenuOpen(false);
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                setAssigneeMenuOpen(false);
+                              }
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setAssigneeMenuOpen((prev) => !prev)}
+                              className="flex w-full items-center justify-between rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 shadow-sm transition hover:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
+                              aria-haspopup="listbox"
+                              aria-expanded={assigneeMenuOpen}
+                            >
+                              <span>
+                                {(selected.assignments || []).find(
+                                  (a) =>
+                                    a.userId ===
+                                    (instructionTarget || currentAssignment?.userId || ""),
+                                )?.name ||
+                                  (selected.assignments || []).find(
+                                    (a) =>
+                                      a.userId ===
+                                      (instructionTarget || currentAssignment?.userId || ""),
+                                  )?.email ||
+                                  "Choose assignee"}
+                              </span>
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 20 20"
+                                className="h-4 w-4 text-emerald-100/70"
+                                fill="currentColor"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.23l3.71-4a.75.75 0 1 1 1.08 1.04l-4.25 4.59a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            </button>
+                            {assigneeMenuOpen && (
+                              <div
+                                role="listbox"
+                                className="absolute z-10 mt-2 w-full rounded-xl border border-emerald-300/30 bg-emerald-950/95 p-1 shadow-xl shadow-black/40"
+                              >
+                                {(selected.assignments || []).length === 0 ? (
+                                  <div className="px-3 py-2 text-xs text-emerald-100/70">
+                                    No assignees yet.
+                                  </div>
+                                ) : (
+                                  (selected.assignments || []).map((a) => {
+                                    const isSelected =
+                                      a.userId ===
+                                      (instructionTarget || currentAssignment?.userId || "");
+                                    return (
+                                      <button
+                                        key={a.userId}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={isSelected}
+                                        onClick={() => {
+                                          setInstructionTarget(a.userId);
+                                          setAssigneeMenuOpen(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
+                                          isSelected
+                                            ? "bg-emerald-500/20 text-emerald-50"
+                                            : "text-emerald-100 hover:bg-emerald-500/15"
+                                        }`}
+                                      >
+                                        <span>{a.name || a.email || "User"}</span>
+                                        <span className="text-[0.7rem] text-emerald-100/60">
+                                          {(a.departments || []).join(", ") || "No dept"}
+                                        </span>
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
                       <textarea
                         rows={3}
                         value={instructionText}
                         onChange={(e) => setInstructionText(e.target.value)}
-                        placeholder="Add an instruction..."
+                        placeholder="Add an assignment..."
                         className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
                       />
                       <div className="flex items-center gap-2">
@@ -828,13 +887,65 @@ export default function ProjectsPage() {
                           {instructionSaving
                             ? "Saving..."
                             : editingInstructionId
-                              ? "Update instruction"
-                              : "Add instruction"}
+                              ? "Update assignment"
+                              : "Add assignment"}
                         </button>
                       </div>
                     </div>
                   </div>
                 )}
+
+                {Array.isArray(selected.generalInstructions) &&
+                  selected.generalInstructions.length > 0 && (
+                    <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4">
+                      <h3 className="mb-2 text-sm font-semibold text-white">
+                        General instructions
+                      </h3>
+                      <ul className="space-y-2 text-sm text-emerald-50/90">
+                        {selected.generalInstructions.map((ins) => (
+                          <li
+                            key={ins._id || ins.text}
+                            className="flex items-start justify-between gap-2 rounded border border-emerald-300/20 bg-emerald-500/10 px-3 py-2"
+                          >
+                            <div>
+                              <div className="text-emerald-50">{ins.text}</div>
+                              {ins.authorName && (
+                                <div className="text-[0.7rem] text-emerald-100/70 mt-1">
+                                  {ins.authorName}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {canEditInstruction(ins.authorId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInstructionScope("general");
+                                    setInstructionTarget("");
+                                    setEditingInstructionId(ins._id || "");
+                                    setInstructionText(ins.text || "");
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              {canDeleteInstruction && (
+                                <button
+                                  type="button"
+                                  onClick={() => deleteInstruction("general", ins._id)}
+                                  disabled={instructionDeletingId === ins._id}
+                                  className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-rose-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-rose-500/20 focus:outline-none focus:ring-2 focus:ring-rose-300/30 cursor-pointer disabled:opacity-60"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-emerald-100/80">
@@ -844,7 +955,7 @@ export default function ProjectsPage() {
           </div>
         </section>
 
-        {canManageProjects && (
+        {canManageProjects && showForm && (
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
             <div className="mb-3 flex items-center justify-between">
               <div>
@@ -855,15 +966,24 @@ export default function ProjectsPage() {
                   Set details, departments, and assignments.
                 </p>
               </div>
-              {editingId && (
+              <div className="flex items-center gap-3">
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={() => resetForm()}
+                    className="text-xs font-semibold text-emerald-100 underline"
+                  >
+                    Cancel edit
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={resetForm}
+                  onClick={() => resetForm({ hide: true })}
                   className="text-xs font-semibold text-emerald-100 underline"
                 >
-                  Cancel edit
+                  Close
                 </button>
-              )}
+              </div>
             </div>
             {formError && (
               <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-100">
@@ -885,20 +1005,6 @@ export default function ProjectsPage() {
                   className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-base text-white placeholder:text-slate-400 focus:border-emerald-300/50 focus:outline-none"
                   required
                 />
-              </label>
-              <label className="flex flex-col gap-2 text-sm font-semibold text-white">
-                Status
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
-                  className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-base text-white focus:border-emerald-300/50 focus:outline-none"
-                >
-                  {STATUS_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
               </label>
               <label className="flex flex-col gap-2 text-sm font-semibold text-white sm:col-span-2">
                 Summary

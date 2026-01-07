@@ -153,9 +153,7 @@ export async function GET(request, context) {
       userId: a.userId?.toString?.() || a.userId,
     }));
 
-    const visibleAssignments = isAdmin || pmHasAccess
-      ? normalizedAssignments
-      : normalizedAssignments.filter((a) => a.userId === token.sub);
+    const visibleAssignments = normalizedAssignments;
 
     return NextResponse.json({
       project: {
