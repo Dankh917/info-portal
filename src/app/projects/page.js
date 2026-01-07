@@ -761,15 +761,15 @@ export default function ProjectsPage() {
                   )}
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-emerald-900/40 p-4">
-                  <h3 className="text-sm font-semibold text-white mb-2">Add instruction</h3>
-                  {instructionError && (
-                    <div className="mb-2 rounded border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                      {instructionError}
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-2">
-                    {canManageSelected && (
+                {canManageSelected && (
+                  <div className="rounded-xl border border-white/10 bg-emerald-900/40 p-4">
+                    <h3 className="text-sm font-semibold text-white mb-2">Add instruction</h3>
+                    {instructionError && (
+                      <div className="mb-2 rounded border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                        {instructionError}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2">
                       <div className="flex items-center gap-3 text-xs text-emerald-50">
                         <label className="flex items-center gap-1">
                           <input
@@ -797,49 +797,44 @@ export default function ProjectsPage() {
                           <span>General</span>
                         </label>
                       </div>
-                    )}
-                    {instructionScope === "assignment" && (
-                      <select
-                        value={instructionTarget || currentAssignment?.userId || ""}
-                        onChange={(e) => setInstructionTarget(e.target.value)}
-                        className="rounded-lg border border-emerald-300/40 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-50 focus:border-emerald-200/70 focus:outline-none"
-                      >
-                        <option value="">Choose assignee</option>
-                        {(selected.assignments || []).map((a) => (
-                          <option key={a.userId} value={a.userId}>
-                            {a.name || a.email || "User"}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <textarea
-                      rows={3}
-                      value={instructionText}
-                      onChange={(e) => setInstructionText(e.target.value)}
-                      placeholder="Add an instruction..."
-                      className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={addInstruction}
-                        disabled={instructionSaving || !instructionText.trim()}
-                        className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {instructionSaving
-                          ? "Saving..."
-                          : editingInstructionId
-                            ? "Update instruction"
-                            : "Add instruction"}
-                      </button>
-                      {instructionScope === "assignment" && !currentAssignment && !canManageSelected && (
-                        <span className="text-xs text-amber-100">
-                          You must be assigned to add instructions.
-                        </span>
+                      {instructionScope === "assignment" && (
+                        <select
+                          value={instructionTarget || currentAssignment?.userId || ""}
+                          onChange={(e) => setInstructionTarget(e.target.value)}
+                          className="rounded-lg border border-emerald-300/40 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-50 focus:border-emerald-200/70 focus:outline-none"
+                        >
+                          <option value="">Choose assignee</option>
+                          {(selected.assignments || []).map((a) => (
+                            <option key={a.userId} value={a.userId}>
+                              {a.name || a.email || "User"}
+                            </option>
+                          ))}
+                        </select>
                       )}
+                      <textarea
+                        rows={3}
+                        value={instructionText}
+                        onChange={(e) => setInstructionText(e.target.value)}
+                        placeholder="Add an instruction..."
+                        className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={addInstruction}
+                          disabled={instructionSaving || !instructionText.trim()}
+                          className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-4 py-2 text-sm font-semibold text-emerald-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {instructionSaving
+                            ? "Saving..."
+                            : editingInstructionId
+                              ? "Update instruction"
+                              : "Add instruction"}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-emerald-100/80">

@@ -3,6 +3,17 @@ import { getToken } from "next-auth/jwt";
 import { getProjectsCollection } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
 
+const canPmAccessProject = (project, token) => {
+  const isPm = token.role === "pm";
+  if (!isPm) return false;
+  const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
+  return (
+    Array.isArray(project.departments) &&
+    project.departments.length > 0 &&
+    project.departments.every((dept) => pmDepartments.includes(dept))
+  );
+};
+
 export async function POST(request, context) {
   const { id } = await context?.params;
   if (!id) {
@@ -35,13 +46,7 @@ export async function POST(request, context) {
     }
 
     const isAdmin = token.role === "admin";
-    const isPm = token.role === "pm";
-    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
-    const pmHasAccess =
-      isPm &&
-      Array.isArray(project.departments) &&
-      project.departments.length > 0 &&
-      project.departments.every((dept) => pmDepartments.includes(dept));
+    const pmHasAccess = canPmAccessProject(project, token);
     const isAssigned = (project.assignments || []).some((a) => a.userId === token.sub);
     if (!isAdmin && !pmHasAccess && !isAssigned) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -51,7 +56,10 @@ export async function POST(request, context) {
       _id: new ObjectId(),
       text,
       authorId: token.sub,
-      authorName: token.name || token.      done: false,
+      authorName: token.name || token.email || "User",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      done: false,
       doneAt: null,
     };
 
@@ -66,12 +74,8 @@ export async function POST(request, context) {
       return NextResponse.json({ ok: true, instruction });
     }
 
-    // Assignment-scoped instruction
     const assignments = project.assignments || [];
-    const targetUser =
-      targetUserId ||
-      (isAssigned ? token.sub : null);
-
+    const targetUser = targetUserId || (isAssigned ? token.sub : null);
     const assignmentIndex = assignments.findIndex((a) => a.userId === targetUser);
     if (assignmentIndex === -1) {
       return NextResponse.json(
@@ -136,13 +140,7 @@ export async function PATCH(request, context) {
     }
 
     const isAdmin = token.role === "admin";
-    const isPm = token.role === "pm";
-    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
-    const pmHasAccess =
-      isPm &&
-      Array.isArray(project.departments) &&
-      project.departments.length > 0 &&
-      project.departments.every((dept) => pmDepartments.includes(dept));
+    const pmHasAccess = canPmAccessProject(project, token);
     const isOwner = project.createdBy?.id === token.sub;
     const isAssigned = (project.assignments || []).some((a) => a.userId === token.sub);
     if (!isAdmin && !isOwner && !pmHasAccess && !isAssigned) {
@@ -182,7 +180,6 @@ export async function PATCH(request, context) {
       return NextResponse.json({ ok: true });
     }
 
-    // Assignment scope
     const assignments = project.assignments || [];
     const targetAssignmentId = targetUserId || token.sub;
     const assignmentIndex = assignments.findIndex((a) => a.userId === targetAssignmentId);
@@ -270,13 +267,7 @@ export async function DELETE(request, context) {
     }
 
     const isAdmin = token.role === "admin";
-    const isPm = token.role === "pm";
-    const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
-    const pmHasAccess =
-      isPm &&
-      Array.isArray(project.departments) &&
-      project.departments.length > 0 &&
-      project.departments.every((dept) => pmDepartments.includes(dept));
+    const pmHasAccess = canPmAccessProject(project, token);
     const isOwner = project.createdBy?.id === token.sub;
     if (!isAdmin && !isOwner && !pmHasAccess) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
@@ -305,7 +296,6 @@ export async function DELETE(request, context) {
 
     const instructions = assignments[assignmentIndex].instructions || [];
     const nextInstructions = instructions.filter((ins) => ins._id?.toString?.() !== instructionId);
-    assignments[assignmentIndex].instructions = nextInstructions;
 
     await collection.updateOne(
       { _id: new ObjectId(id) },
@@ -322,23 +312,6 @@ export async function DELETE(request, context) {
     console.error("Failed to delete instruction", error);
     return NextResponse.json(
       { error: "Unable to delete instruction right now." },
-tResponse.json({ ok: true });
-  } catch (error) {
-    console.error("Failed to update instruction", error);
-    return NextResponse.json(
-      { error: "Unable to update instruction right now." },
-) {
-    console.error("Failed to update instruction", error);
-    return NextResponse.json(
-      { error: "Unable to update instruction right now." },
-) {
-    console.error("Failed to update instruction", error);
-    return NextResponse.json(
-      { error: "Unable to update instruction right now." },
- {
-    console.error("Failed to update instruction", error);
-    return NextResponse.json(
-      { error: "Unable to update instruction right now." },
       { status: 500 },
     );
   }
