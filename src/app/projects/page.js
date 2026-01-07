@@ -117,11 +117,16 @@ export default function ProjectsPage() {
   const [instructionTarget, setInstructionTarget] = useState("");
   const [instructionError, setInstructionError] = useState("");
   const [instructionSaving, setInstructionSaving] = useState(false);
+  const [instructionUpdatingId, setInstructionUpdatingId] = useState("");
+  const [instructionDeletingId, setInstructionDeletingId] = useState("");
   const [editingInstructionId, setEditingInstructionId] = useState("");
 
-  const loadProjects = async () => {
-    setLoading(true);
-    setError("");
+  const loadProjects = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const res = await fetch("/api/projects", { cache: "no-store" });
       const data = await res.json();
@@ -140,7 +145,15 @@ export default function ProjectsPage() {
           assignments: (p.assignments || []).map((a) => {
             const aidSource = a.userId || a._id;
             const aid = typeof aidSource === "string" ? aidSource : aidSource?.toString?.();
-            return { ...a, userId: aid || "" };
+            return {
+              ...a,
+              userId: aid || "",
+              instructions: (a.instructions || []).map((ins) => {
+                const iidSource = ins._id || ins.id;
+                const iid = typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
+                return { ...ins, _id: iid || "" };
+              }),
+            };
           }),
             generalInstructions: (p.generalInstructions || []).map((ins) => {
               const iidSource = ins._id || ins.id;
@@ -153,9 +166,11 @@ export default function ProjectsPage() {
       setProjects(normalized);
       if (normalized.length) {
         setSelected((prev) => {
-          if (prev && normalized.find((p) => p._id === prev._id)) {
-            setSelectedId(prev._id);
-            return prev;
+          const currentId = prev?._id;
+          const match = currentId ? normalized.find((p) => p._id === currentId) : null;
+          if (match) {
+            setSelectedId(match._id);
+            return match;
           }
           const first = normalized[0];
           const pid = first?._id || first?.id;
@@ -171,9 +186,13 @@ export default function ProjectsPage() {
         setSelectedId("");
       }
     } catch (err) {
-      setError(err.message || "Unable to load projects.");
+      if (!silent) {
+        setError(err.message || "Unable to load projects.");
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -208,6 +227,25 @@ export default function ProjectsPage() {
     loadProjects();
     loadDepartments();
     loadUsers();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadProjects({ silent: true });
+      }
+    };
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadProjects({ silent: true });
+      }
+    }, 10000);
+
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.role]);
 
@@ -358,14 +396,75 @@ export default function ProjectsPage() {
     }
   };
 
+  const toggleInstructionDone = async (assignmentUserId, instructionId, nextDone) => {
+    if (!selectedId) {
+      setInstructionError("Project id is required.");
+      return;
+    }
+    setInstructionUpdatingId(instructionId);
+    setInstructionError("");
+    try {
+      const res = await fetch(`/api/projects/${selectedId}/instructions`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructionId,
+          scope: "assignment",
+          userId: assignmentUserId,
+          done: nextDone,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to update instruction.");
+      }
+      await loadProjects({ silent: true });
+    } catch (err) {
+      setInstructionError(err.message || "Unable to update instruction.");
+    } finally {
+      setInstructionUpdatingId("");
+    }
+  };
+
+  const deleteInstruction = async (scope, instructionId, assignmentUserId) => {
+    if (!selectedId) {
+      setInstructionError("Project id is required.");
+      return;
+    }
+    setInstructionDeletingId(instructionId);
+    setInstructionError("");
+    try {
+      const payload = {
+        instructionId,
+        scope,
+        userId: scope === "assignment" ? assignmentUserId : undefined,
+      };
+      const res = await fetch(`/api/projects/${selectedId}/instructions`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to delete instruction.");
+      }
+      await loadProjects({ silent: true });
+    } catch (err) {
+      setInstructionError(err.message || "Unable to delete instruction.");
+    } finally {
+      setInstructionDeletingId("");
+    }
+  };
+
   const currentAssignment = useMemo(() => {
     if (!selected || !userId) return null;
     return (selected.assignments || []).find((a) => a.userId === userId) || null;
   }, [selected, userId]);
 
+  const isOwner = selected?.createdBy?.id === userId;
+  const canDeleteInstruction = isAdmin || isOwner;
+
   const canEditInstruction = (insAuthorId) => {
-    const isOwner = selected?.createdBy?.id === userId;
-    const isAdmin = session?.user?.role === "admin";
     return isAdmin || isOwner || insAuthorId === userId;
   };
 
@@ -516,30 +615,64 @@ export default function ProjectsPage() {
                               {a.instructions.map((ins) => (
                                 <li
                                   key={ins._id || ins.text}
-                                  className="flex items-start justify-between gap-2 rounded bg-emerald-500/10 px-2 py-1"
+                                  className="flex items-start justify-between gap-3 rounded bg-emerald-500/10 px-2 py-1"
                                 >
                                   <div>
-                                    <div>{ins.text}</div>
+                                    <div
+                                      className={ins.done ? "line-through text-emerald-200/70" : ""}
+                                    >
+                                      {ins.text}
+                                    </div>
                                     {ins.authorName && (
                                       <span className="text-[0.68rem] text-emerald-100/70">
-                                        — {ins.authorName}
+                                        by {ins.authorName}
                                       </span>
                                     )}
                                   </div>
-                                  {canEditInstruction(ins.authorId) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setInstructionScope("assignment");
-                                        setInstructionTarget(a.userId);
-                                        setEditingInstructionId(ins._id || "");
-                                        setInstructionText(ins.text || "");
-                                      }}
-                                      className="text-[0.7rem] font-semibold text-emerald-100 underline"
-                                    >
-                                      Edit
-                                    </button>
-                                  )}
+                                  <div className="flex items-center gap-2">
+                                    {userId === a.userId && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          toggleInstructionDone(a.userId, ins._id, !ins.done)
+                                        }
+                                        disabled={instructionUpdatingId === ins._id}
+                                        className={`text-[0.7rem] underline disabled:opacity-60 ${
+                                          ins.done
+                                            ? "font-bold text-emerald-200"
+                                            : "font-semibold text-red-200"
+                                        }`}
+                                      >
+                                        {ins.done ? "Done" : "Undone"}
+                                      </button>
+                                    )}
+                                    {canEditInstruction(ins.authorId) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setInstructionScope("assignment");
+                                          setInstructionTarget(a.userId);
+                                          setEditingInstructionId(ins._id || "");
+                                          setInstructionText(ins.text || "");
+                                        }}
+                                        className="text-[0.7rem] font-semibold text-emerald-100 underline"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                    {canDeleteInstruction && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          deleteInstruction("assignment", ins._id, a.userId)
+                                        }
+                                        disabled={instructionDeletingId === ins._id}
+                                        className="text-[0.7rem] font-semibold text-red-200 underline disabled:opacity-60"
+                                      >
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
                                 </li>
                               ))}
                             </ul>
@@ -569,20 +702,32 @@ export default function ProjectsPage() {
                               </div>
                             )}
                           </div>
-                          {canEditInstruction(ins.authorId) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setInstructionScope("general");
-                                setInstructionTarget("");
-                                setEditingInstructionId(ins._id || "");
-                                setInstructionText(ins.text || "");
-                              }}
-                              className="text-[0.7rem] font-semibold text-emerald-100 underline"
-                            >
-                              Edit
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {canEditInstruction(ins.authorId) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setInstructionScope("general");
+                                  setInstructionTarget("");
+                                  setEditingInstructionId(ins._id || "");
+                                  setInstructionText(ins.text || "");
+                                }}
+                                className="text-[0.7rem] font-semibold text-emerald-100 underline"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {canDeleteInstruction && (
+                              <button
+                                type="button"
+                                onClick={() => deleteInstruction("general", ins._id)}
+                                disabled={instructionDeletingId === ins._id}
+                                className="text-[0.7rem] font-semibold text-red-200 underline disabled:opacity-60"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -857,3 +1002,5 @@ export default function ProjectsPage() {
     </div>
   );
 }
+
+

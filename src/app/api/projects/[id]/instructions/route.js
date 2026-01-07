@@ -46,6 +46,8 @@ export async function POST(request, context) {
       authorId: token.sub,
       authorName: token.name || token.email || "User",
       createdAt: new Date(),
+      done: false,
+      doneAt: null,
     };
 
     if (scope === "general") {
@@ -112,12 +114,13 @@ export async function PATCH(request, context) {
     const text = body?.text?.trim();
     const scope = body?.scope === "general" ? "general" : "assignment";
     const targetUserId = body?.userId;
+    const done = typeof body?.done === "boolean" ? body.done : null;
 
     if (!instructionId) {
       return NextResponse.json({ error: "Instruction id is required." }, { status: 400 });
     }
-    if (!text) {
-      return NextResponse.json({ error: "Instruction text is required." }, { status: 400 });
+    if (!text && done === null) {
+      return NextResponse.json({ error: "Instruction update is required." }, { status: 400 });
     }
 
     const collection = await getProjectsCollection();
@@ -135,6 +138,12 @@ export async function PATCH(request, context) {
     }
 
     if (scope === "general") {
+      if (done !== null) {
+        return NextResponse.json(
+          { error: "Done status is only available for assignment instructions." },
+          { status: 400 },
+        );
+      }
       const general = project.generalInstructions || [];
       const idx = general.findIndex((g) => g._id?.toString?.() === instructionId);
       if (idx === -1) {
@@ -148,8 +157,10 @@ export async function PATCH(request, context) {
       if (!canEdit) {
         return NextResponse.json({ error: "Forbidden." }, { status: 403 });
       }
-      general[idx].text = text;
-      general[idx].updatedAt = new Date();
+      if (text) {
+        general[idx].text = text;
+        general[idx].updatedAt = new Date();
+      }
 
       await collection.updateOne(
         { _id: new ObjectId(id) },
@@ -173,16 +184,24 @@ export async function PATCH(request, context) {
     }
 
     const targetInstruction = instructions[insIndex];
-    const canEdit =
-      isAdmin ||
-      isOwner ||
-      targetInstruction.authorId === token.sub;
-    if (!canEdit) {
-      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    if (done !== null) {
+      if (targetAssignmentId !== token.sub) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+      instructions[insIndex].done = done;
+      instructions[insIndex].doneAt = done ? new Date() : null;
+      instructions[insIndex].updatedAt = new Date();
+    } else {
+      const canEdit =
+        isAdmin ||
+        isOwner ||
+        targetInstruction.authorId === token.sub;
+      if (!canEdit) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+      instructions[insIndex].text = text;
+      instructions[insIndex].updatedAt = new Date();
     }
-
-    instructions[insIndex].text = text;
-    instructions[insIndex].updatedAt = new Date();
     assignments[assignmentIndex].instructions = instructions;
 
     await collection.updateOne(
@@ -200,6 +219,88 @@ export async function PATCH(request, context) {
     console.error("Failed to update instruction", error);
     return NextResponse.json(
       { error: "Unable to update instruction right now." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request, context) {
+  const { id } = await context?.params;
+  if (!id) {
+    return NextResponse.json({ error: "Project id is required." }, { status: 400 });
+  }
+
+  try {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const instructionId = body?.instructionId;
+    const scope = body?.scope === "general" ? "general" : "assignment";
+    const targetUserId = body?.userId;
+
+    if (!instructionId) {
+      return NextResponse.json({ error: "Instruction id is required." }, { status: 400 });
+    }
+
+    const collection = await getProjectsCollection();
+    const project = await collection.findOne({ _id: new ObjectId(id) });
+
+    if (!project) {
+      return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    const isAdmin = token.role === "admin";
+    const isOwner = project.createdBy?.id === token.sub;
+    if (!isAdmin && !isOwner) {
+      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    }
+
+    if (scope === "general") {
+      const general = project.generalInstructions || [];
+      const nextGeneral = general.filter((g) => g._id?.toString?.() !== instructionId);
+
+      await collection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { generalInstructions: nextGeneral, updatedAt: new Date() } },
+      );
+      return NextResponse.json({ ok: true });
+    }
+
+    if (!targetUserId) {
+      return NextResponse.json({ error: "Assignment user is required." }, { status: 400 });
+    }
+
+    const assignments = project.assignments || [];
+    const assignmentIndex = assignments.findIndex((a) => a.userId === targetUserId);
+    if (assignmentIndex === -1) {
+      return NextResponse.json({ error: "Assignment not found." }, { status: 404 });
+    }
+
+    const instructions = assignments[assignmentIndex].instructions || [];
+    const nextInstructions = instructions.filter((ins) => ins._id?.toString?.() !== instructionId);
+    assignments[assignmentIndex].instructions = nextInstructions;
+
+    await collection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          [`assignments.${assignmentIndex}.instructions`]: nextInstructions,
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("Failed to delete instruction", error);
+    return NextResponse.json(
+      { error: "Unable to delete instruction right now." },
       { status: 500 },
     );
   }
