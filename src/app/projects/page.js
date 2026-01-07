@@ -517,10 +517,10 @@ export default function ProjectsPage() {
         selected.departments.length > 0 &&
         selected.departments.every((dept) => userDepartments.includes(dept))));
 
-  const canDeleteInstruction = isAdmin || isOwner || (isPm && canManageSelected);
+  const canDeleteInstruction = isAdmin || (isPm && canManageSelected);
 
   const canEditInstruction = (insAuthorId) => {
-    return isAdmin || isOwner || (isPm && canManageSelected) || insAuthorId === userId;
+    return isAdmin || (isPm && canManageSelected);
   };
 
   const visibleProjects = projects;
