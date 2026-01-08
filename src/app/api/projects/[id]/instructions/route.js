@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getProjectsCollection } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
+import { logError } from "@/lib/logger";
 
 const canPmAccessProject = (project, token) => {
   const isPm = token.role === "pm";
@@ -20,8 +21,9 @@ export async function POST(request, context) {
     return NextResponse.json({ error: "Project id is required." }, { status: 400 });
   }
 
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -95,7 +97,12 @@ export async function POST(request, context) {
 
     return NextResponse.json({ ok: true, instruction });
   } catch (error) {
-    console.error("Failed to add instruction", error);
+    await logError("Failed to add instruction", error, {
+      route: `/api/projects/${id}/instructions`,
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to add instruction right now." },
       { status: 500 },
@@ -109,8 +116,9 @@ export async function PATCH(request, context) {
     return NextResponse.json({ error: "Project id is required." }, { status: 400 });
   }
 
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -227,7 +235,12 @@ export async function PATCH(request, context) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Failed to update instruction", error);
+    await logError("Failed to update instruction", error, {
+      route: `/api/projects/${id}/instructions`,
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to update instruction right now." },
       { status: 500 },
@@ -241,8 +254,9 @@ export async function DELETE(request, context) {
     return NextResponse.json({ error: "Project id is required." }, { status: 400 });
   }
 
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -309,7 +323,12 @@ export async function DELETE(request, context) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Failed to delete instruction", error);
+    await logError("Failed to delete instruction", error, {
+      route: `/api/projects/${id}/instructions`,
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to delete instruction right now." },
       { status: 500 },
