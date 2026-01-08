@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTagsCollection } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 import { getToken } from "next-auth/jwt";
 
 const DEFAULT_TAGS = [
@@ -65,7 +66,11 @@ export async function GET(request) {
       .toArray();
     return NextResponse.json({ tags });
   } catch (error) {
-    console.error("Failed to fetch tags", error);
+    await logError("Failed to fetch tags", error, {
+      route: "/api/tags",
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to load tags right now." },
       { status: 500 },
@@ -138,7 +143,11 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("Failed to save tag", error);
+    await logError("Failed to save tag", error, {
+      route: "/api/tags",
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to save tag right now." },
       { status: 500 },

@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 import { getDocumentsCollection } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,11 @@ export async function GET(request, { params }) {
       },
     });
   } catch (error) {
+    await logError("Failed to download document", error, {
+      route: `/api/documents/${params?.id || "unknown"}`,
+      method: request?.method,
+      url: request?.url,
+    });
     return new Response("Unable to download document.", { status: 500 });
   }
 }

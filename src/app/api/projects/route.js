@@ -6,6 +6,7 @@ import {
   getDepartmentsCollection,
 } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
+import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
@@ -177,7 +178,11 @@ export async function GET(request) {
 
     return NextResponse.json({ projects: normalized });
   } catch (error) {
-    console.error("Failed to fetch projects", error);
+    await logError("Failed to fetch projects", error, {
+      route: "/api/projects",
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to load projects right now." },
       { status: 500 },
@@ -186,8 +191,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -292,7 +298,12 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("Failed to create project", error);
+    await logError("Failed to create project", error, {
+      route: "/api/projects",
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to create project right now." },
       { status: 500 },

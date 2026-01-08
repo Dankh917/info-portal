@@ -7,12 +7,14 @@ import {
 } from "@/lib/mongo";
 import { getToken } from "next-auth/jwt";
 import { ObjectId } from "mongodb";
+import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
 export async function GET(request) {
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -37,7 +39,12 @@ export async function GET(request) {
         }
       }
     } catch (lookupError) {
-      console.error("Failed to load user departments", lookupError);
+      await logError("Failed to load user departments", lookupError, {
+        route: "/api/updates",
+        method: request?.method,
+        url: request?.url,
+        userId: token?.sub,
+      });
     }
 
     const collection = await getUpdatesCollection();
@@ -66,7 +73,12 @@ export async function GET(request) {
 
     return NextResponse.json({ updates });
   } catch (error) {
-    console.error("Failed to fetch updates", error);
+    await logError("Failed to fetch updates", error, {
+      route: "/api/updates",
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to load updates right now." },
       { status: 500 },
@@ -75,8 +87,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -205,7 +218,12 @@ export async function POST(request) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("Failed to save update", error);
+    await logError("Failed to save update", error, {
+      route: "/api/updates",
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to save update right now." },
       { status: 500 },

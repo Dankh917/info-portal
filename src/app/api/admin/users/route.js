@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getToken } from "next-auth/jwt";
 import { clientPromise } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
@@ -70,7 +71,12 @@ export async function GET(request) {
 
     return NextResponse.json({ users });
   } catch (error) {
-    console.error("Failed to load users", error);
+    await logError("Failed to load users", error, {
+      route: "/api/admin/users",
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to load users right now." },
       { status: 500 },
@@ -159,7 +165,11 @@ export async function PATCH(request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Failed to update user", error);
+    await logError("Failed to update user", error, {
+      route: "/api/admin/users",
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to update user right now." },
       { status: 500 },
