@@ -129,9 +129,9 @@ export async function PATCH(request) {
       );
     }
 
-    if (role && !["user", "pm", "admin"].includes(role)) {
+    if (role && !["general", "pm", "admin"].includes(role)) {
       return NextResponse.json(
-        { error: "Role must be user, pm, or admin." },
+        { error: "Role must be general, pm, or admin." },
         { status: 400 },
       );
     }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const ROLE_OPTIONS = ["user", "pm", "admin"];
+const ROLE_OPTIONS = ["general", "pm", "admin"];
 
 export default function AdminUsersClient() {
   const [users, setUsers] = useState([]);

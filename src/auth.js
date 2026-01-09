@@ -110,10 +110,7 @@ export const authOptions = {
               .findOne(query, { projection: { role: 1, department: 1, departments: 1, name: 1 } });
 
             session.user.role = dbUser?.role ?? session.user.role;
-          await logError("Failed to refresh session role", error, {
-            userId: token.sub,
-            email: token.email,
-          }
+            const dbUserDepts = dbUser?.departments ??
               (dbUser?.department ? [dbUser.department] : session.user.departments);
             // Ensure General department is always included
             if (!dbUserDepts.includes("General")) {
@@ -123,7 +120,10 @@ export const authOptions = {
             session.user.name = dbUser?.name ?? session.user.name;
           }
         } catch (error) {
-          console.error("Failed to refresh session role", error);
+          await logError("Failed to refresh session role", error, {
+            userId: token.sub,
+            email: token.email,
+          });
         }
       }
       return session;
@@ -146,13 +146,13 @@ export const authOptions = {
                 createdAt: new Date(),
               } 
             },
+          );
+        console.log("[Auth] New user created successfully", { userId: user.id, role: "general", departments: ["General"] });
+      } catch (error) {
         await logError("Failed to create new user", error, {
           userId: user.id,
           email: user.email,
-       
-        console.log("[Auth] New user created successfully", { userId: user.id, role: "general", departments: ["General"] });
-      } catch (error) {
-        console.error("[Auth] Failed to create new user", { userId: user.id, error: error.message });
+        });
         throw error;
       }
     },
