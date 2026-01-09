@@ -13,6 +13,7 @@ export default function AdminUsersClient() {
   const [departments, setDepartments] = useState([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [departmentsError, setDepartmentsError] = useState("");
+  const [imageErrors, setImageErrors] = useState({});
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -193,11 +194,12 @@ export default function AdminUsersClient() {
                   className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-4 shadow-inner shadow-black/40 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex items-center gap-3">
-                    {user.image ? (
+                    {user.image && !imageErrors[user._id] ? (
                       <img
                         src={user.image}
                         alt={user.email || "User"}
                         className="h-10 w-10 rounded-full border border-white/20 object-cover"
+                        onError={() => setImageErrors(prev => ({ ...prev, [user._id]: true }))}
                       />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-400/20 text-xs font-semibold text-emerald-100">
