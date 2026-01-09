@@ -2,6 +2,7 @@ import GoogleProvider from "next-auth/providers/google";
 import { MongoDBAdapter } from "@next-auth/mongodb-adapter";
 import { ObjectId } from "mongodb";
 import { clientPromise } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
@@ -59,23 +60,33 @@ export const authOptions = {
         token.departments = userDepts;
         token.name = user.name ?? token.name;
       } else if (token?.email || token?.sub) {
-        const client = await clientPromise;
-        const query = token.sub ? { _id: new ObjectId(token.sub) } : { email: token.email };
-        const dbUser = await client
-          .db(dbName)
-          .collection("users")
-          .findOne(query, { projection: { role: 1, department: 1, departments: 1, name: 1 } });
+        try {
+          const client = await clientPromise;
+          const query = token.sub ? { _id: new ObjectId(token.sub) } : { email: token.email };
+          const dbUser = await client
+            .db(dbName)
+            .collection("users")
+            .findOne(query, { projection: { role: 1, department: 1, departments: 1, name: 1 } });
 
-        token.role = dbUser?.role ?? "general";
-        const dbUserDepts = normalizeDepartments(
-          dbUser?.departments ?? dbUser?.department ?? []
-        );
-        // Ensure General department is always included
-        if (!dbUserDepts.includes("General")) {
-          dbUserDepts.push("General");
+          token.role = dbUser?.role ?? "general";
+          const dbUserDepts = normalizeDepartments(
+            dbUser?.departments ?? dbUser?.department ?? []
+          );
+          // Ensure General department is always included
+          if (!dbUserDepts.includes("General")) {
+            dbUserDepts.push("General");
+          }
+          token.departments = dbUserDepts;
+          token.name = dbUser?.name ?? token.name;
+        } catch (error) {
+          await logError("Failed to load user data in JWT callback", error, {
+            userId: token.sub,
+            email: token.email,
+          });
+          // Fallback to defaults
+          token.role = token.role ?? "general";
+          token.departments = token.departments ?? ["General"];
         }
-        token.departments = dbUserDepts;
-        token.name = dbUser?.name ?? token.name;
       }
 
       return token;
@@ -99,7 +110,10 @@ export const authOptions = {
               .findOne(query, { projection: { role: 1, department: 1, departments: 1, name: 1 } });
 
             session.user.role = dbUser?.role ?? session.user.role;
-            const dbUserDepts = dbUser?.departments ??
+          await logError("Failed to refresh session role", error, {
+            userId: token.sub,
+            email: token.email,
+          }
               (dbUser?.department ? [dbUser.department] : session.user.departments);
             // Ensure General department is always included
             if (!dbUserDepts.includes("General")) {
@@ -132,7 +146,10 @@ export const authOptions = {
                 createdAt: new Date(),
               } 
             },
-          );
+        await logError("Failed to create new user", error, {
+          userId: user.id,
+          email: user.email,
+       
         console.log("[Auth] New user created successfully", { userId: user.id, role: "general", departments: ["General"] });
       } catch (error) {
         console.error("[Auth] Failed to create new user", { userId: user.id, error: error.message });
