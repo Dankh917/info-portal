@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import ProjectSearch from "./project-search";
+import ParticleBackground from "./particle-background";
 
 const formatDate = (value) => {
   try {
@@ -311,7 +312,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <main className="mx-auto flex max-w-5xl flex-col gap-12 px-6 py-16">
+      <ParticleBackground />
+      <main className="relative z-10 mx-auto flex max-w-5xl flex-col gap-12 px-6 py-16">
         <header className="flex flex-col gap-3">
           <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/80">
             InfoPortal
