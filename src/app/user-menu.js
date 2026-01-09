@@ -8,6 +8,7 @@ export default function UserMenu() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -20,6 +21,17 @@ export default function UserMenu() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      console.log("[UserMenu] User authenticated", {
+        email: session?.user?.email,
+        role: session?.user?.role,
+      });
+    } else if (status === "unauthenticated") {
+      console.log("[UserMenu] User unauthenticated");
+    }
+  }, [status, session?.user?.email, session?.user?.role]);
 
   const email = session?.user?.email;
   const displayName = email || "Sign in";
@@ -46,6 +58,13 @@ export default function UserMenu() {
             src={session.user.image}
             alt={email || "User avatar"}
             className="h-7 w-7 rounded-full border border-white/20 object-cover"
+            onError={() => {
+              console.warn("[UserMenu] Failed to load profile image", {
+                url: session.user.image,
+                email: session.user.email,
+              });
+              setImageError(true);
+            }}
           />
         ) : (
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/20 text-[0.6rem] font-semibold text-emerald-100">
@@ -80,7 +99,10 @@ export default function UserMenu() {
           {session ? (
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => {
+                console.log("[UserMenu] Signing out user", { email: session.user.email });
+                signOut({ callbackUrl: "/login" });
+              }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >
@@ -89,9 +111,10 @@ export default function UserMenu() {
           ) : (
             <button
               type="button"
-              onClick={() =>
-                signIn("google", { callbackUrl: "/", prompt: "select_account" })
-              }
+              onClick={() => {
+                console.log("[UserMenu] Initiating Google sign in");
+                signIn("google", { callbackUrl: "/", prompt: "select_account" });
+              }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >

@@ -55,7 +55,8 @@ export async function GET(request) {
     return NextResponse.json({ departments });
   } catch (error) {
     console.error("Failed to fetch departments", error);
-    return NextResponse.json(
+    return NextResponse.json
+    (
       { error: "Unable to load departments right now." },
       { status: 500 },
     );

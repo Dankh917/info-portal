@@ -1,0 +1,458 @@
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
+
+const formatDate = (value) => {
+  if (!value) return "No date";
+  try {
+    return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+  } catch {
+    return "No date";
+  }
+};
+
+// Custom debounce hook for search optimization
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+export default function ProjectSearch() {
+  const { data: session } = useSession();
+  const [projects, setProjects] = useState([]);
+  const [updates, setUpdates] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300); // 300ms debounce
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        console.log("[ProjectSearch] Starting data load for user:", session?.user?.email);
+        
+        // Load projects, updates, and documents in parallel
+        const [projectsRes, updatesRes, documentsRes] = await Promise.all([
+          fetch("/api/projects", { cache: "no-store" }),
+          fetch("/api/updates", { cache: "no-store" }),
+          fetch("/api/documents", { cache: "no-store" }),
+        ]);
+
+        const projectsData = await projectsRes.json();
+        const updatesData = await updatesRes.json();
+        const documentsData = await documentsRes.json();
+
+        if (!projectsRes.ok) {
+          const errorMsg = projectsData?.error || "Unable to load projects.";
+          console.error("[ProjectSearch] Failed to load projects:", {
+            status: projectsRes.status,
+            statusText: projectsRes.statusText,
+            error: errorMsg,
+            responseData: projectsData,
+          });
+          throw new Error(errorMsg);
+        }
+
+        if (!updatesRes.ok) {
+          const errorMsg = updatesData?.error || "Unable to load updates.";
+          console.error("[ProjectSearch] Failed to load updates:", {
+            status: updatesRes.status,
+            statusText: updatesRes.statusText,
+            error: errorMsg,
+            responseData: updatesData,
+          });
+          throw new Error(errorMsg);
+        }
+
+        if (!documentsRes.ok) {
+          const errorMsg = documentsData?.error || "Unable to load documents.";
+          console.error("[ProjectSearch] Failed to load documents:", {
+            status: documentsRes.status,
+            statusText: documentsRes.statusText,
+            error: errorMsg,
+            responseData: documentsData,
+          });
+          throw new Error(errorMsg);
+        }
+
+        console.log("[ProjectSearch] Successfully loaded data:", {
+          projectsCount: projectsData.projects?.length || 0,
+          updatesCount: updatesData.updates?.length || 0,
+          documentsCount: documentsData.documents?.length || 0,
+          userEmail: session?.user?.email,
+        });
+        setProjects(projectsData.projects ?? []);
+        setUpdates(updatesData.updates ?? []);
+        setDocuments(documentsData.documents ?? []);
+      } catch (err) {
+        const errorMsg = err.message || "Unable to load data.";
+        console.error("[ProjectSearch] Error loading data:", {
+          error: errorMsg,
+          errorName: err.name,
+          stack: err.stack,
+          userEmail: session?.user?.email,
+        });
+        setError(errorMsg);
+        setProjects([]);
+        setUpdates([]);
+        setDocuments([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (session?.user) {
+      loadData();
+    } else {
+      console.log("[ProjectSearch] No user session available, skipping data load");
+    }
+  }, [session?.user]);
+
+  // Filter projects and updates based on debounced search query with useMemo for performance
+  const filteredProjects = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return [];
+    }
+
+    try {
+      console.log("[ProjectSearch] Filtering projects for query:", debouncedSearchQuery);
+      const query = debouncedSearchQuery.toLowerCase();
+      const filtered = projects.filter((project) => {
+        try {
+          const titleMatch = (project.title || "").toLowerCase().includes(query);
+          const summaryMatch = (project.summary || "").toLowerCase().includes(query);
+          const tagsMatch = Array.isArray(project.tags) &&
+            project.tags.some((tag) => (tag || "").toLowerCase().includes(query));
+          const deptsMatch = Array.isArray(project.departments) &&
+            project.departments.some((dept) => (dept || "").toLowerCase().includes(query));
+
+          return titleMatch || summaryMatch || tagsMatch || deptsMatch;
+        } catch (err) {
+          console.error("[ProjectSearch] Error filtering individual project:", {
+            projectId: project._id,
+            error: err.message,
+          });
+          return false;
+        }
+      });
+
+      console.log("[ProjectSearch] Filtered projects:", { query: debouncedSearchQuery, count: filtered.length });
+      return filtered;
+    } catch (err) {
+      console.error("[ProjectSearch] Error in project filtering:", {
+        query: debouncedSearchQuery,
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }, [debouncedSearchQuery, projects]);
+
+  const filteredUpdates = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return [];
+    }
+
+    try {
+      console.log("[ProjectSearch] Filtering updates for query:", debouncedSearchQuery);
+      const query = debouncedSearchQuery.toLowerCase();
+      const filtered = updates.filter((update) => {
+        try {
+          const titleMatch = (update.title || "").toLowerCase().includes(query);
+          const messageMatch = (update.message || "").toLowerCase().includes(query);
+
+          return titleMatch || messageMatch;
+        } catch (err) {
+          console.error("[ProjectSearch] Error filtering individual update:", {
+            updateId: update._id,
+            error: err.message,
+          });
+          return false;
+        }
+      });
+
+      console.log("[ProjectSearch] Filtered updates:", { query: debouncedSearchQuery, count: filtered.length });
+      return filtered;
+    } catch (err) {
+      console.error("[ProjectSearch] Error in update filtering:", {
+        query: debouncedSearchQuery,
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }, [debouncedSearchQuery, updates]);
+
+  const filteredDocuments = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return [];
+    }
+
+    try {
+      console.log("[ProjectSearch] Filtering documents for query:", debouncedSearchQuery);
+      const query = debouncedSearchQuery.toLowerCase();
+      const filtered = documents.filter((document) => {
+        try {
+          const titleMatch = (document.title || "").toLowerCase().includes(query);
+          const nameMatch = (document.originalName || "").toLowerCase().includes(query);
+
+          return titleMatch || nameMatch;
+        } catch (err) {
+          console.error("[ProjectSearch] Error filtering individual document:", {
+            documentId: document._id,
+            error: err.message,
+          });
+          return false;
+        }
+      });
+
+      console.log("[ProjectSearch] Filtered documents:", { query: debouncedSearchQuery, count: filtered.length });
+      return filtered;
+    } catch (err) {
+      console.error("[ProjectSearch] Error in document filtering:", {
+        query: debouncedSearchQuery,
+        error: err.message,
+        stack: err.stack,
+      });
+      return [];
+    }
+  }, [debouncedSearchQuery, documents]);
+
+  const totalResults = filteredProjects.length + filteredUpdates.length + filteredDocuments.length;
+
+  // Track if user is actively typing
+  const isSearching = searchQuery !== debouncedSearchQuery;
+
+  if (!session?.user) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+            Search Hub
+          </p>
+          <h2 className="text-2xl font-semibold">Search everything</h2>
+        </div>
+        <Link
+          href="/projects"
+          className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-[0.75rem] font-semibold uppercase tracking-[0.18em] text-emerald-100 transition hover:border-emerald-300/50 hover:text-emerald-50"
+        >
+          View All
+        </Link>
+      </div>
+
+      <div className="mb-4">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search projects, updates, and documents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 pr-24 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
+          />
+          {isSearching && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent"></div>
+            </div>
+          )}
+          {!isSearching && searchQuery.trim() && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+              {totalResults} {totalResults === 1 ? 'result' : 'results'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="animate-pulse rounded-lg border border-white/5 bg-white/5 px-4 py-3"
+            >
+              <div className="mb-2 h-3 w-48 rounded bg-white/20" />
+              <div className="h-3 w-96 rounded bg-white/15" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && searchQuery.trim() && totalResults === 0 ? (
+        <div className="rounded-lg border border-dashed border-white/10 bg-white/5 px-5 py-8 text-center text-slate-300">
+          <p className="text-sm">No results match your search.</p>
+          <p className="text-xs text-slate-400 mt-1">Try a different keyword.</p>
+        </div>
+      ) : null}
+
+      {!loading && searchQuery.trim() && totalResults > 0 ? (
+        <div className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Updates Section */}
+          {filteredUpdates.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs uppercase tracking-[0.2em] text-emerald-300/60 px-2">
+                Updates ({filteredUpdates.length})
+              </h3>
+              {filteredUpdates.map((update) => (
+                <div
+                  key={update._id}
+                  className="rounded-lg border border-white/10 bg-slate-900/70 p-4 shadow-inner hover:border-emerald-400/30 transition"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-white line-clamp-1">
+                        {update.title}
+                      </h4>
+                      <p className="text-xs text-slate-400 line-clamp-2 mt-1">
+                        {update.message}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      {formatDate(update.createdAt)}
+                    </span>
+                  </div>
+                  {Array.isArray(update.departments) && update.departments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {update.departments.map((dept) => (
+                        <span
+                          key={dept}
+                          className="inline-flex items-center rounded-full border border-emerald-200/30 bg-emerald-900/60 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-emerald-100"
+                        >
+                          {dept}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Documents Section */}
+          {filteredDocuments.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs uppercase tracking-[0.2em] text-emerald-300/60 px-2">
+                Documents ({filteredDocuments.length})
+              </h3>
+              {filteredDocuments.map((document) => (
+                <a
+                  key={document._id}
+                  href={`/api/documents/${document._id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 shadow-inner hover:border-emerald-400/30 transition"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
+                        {document.title}
+                      </h4>
+                      <p className="text-xs text-slate-400 line-clamp-1 mt-1">
+                        {document.originalName}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      {formatDate(document.createdAt)}
+                    </span>
+                  </div>
+                  {document.size && (
+                    <div className="mt-2">
+                      <span className="inline-flex items-center rounded-full border border-blue-200/30 bg-blue-900/60 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-blue-100">
+                        {(document.size / 1024).toFixed(1)} KB
+                      </span>
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Projects Section */}
+          {filteredProjects.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs uppercase tracking-[0.2em] text-emerald-300/60 px-2">
+                Projects ({filteredProjects.length})
+              </h3>
+              {filteredProjects.map((project) => (
+            <Link
+              key={project._id}
+              href={`/projects?id=${project._id}`}
+              className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 transition hover:border-emerald-400/40 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-emerald-500/10"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
+                    {project.title}
+                  </h3>
+                  <p className="text-xs text-slate-400 line-clamp-1 mt-1">
+                    {project.summary || "No summary"}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500 whitespace-nowrap">
+                  {formatDate(project.dueDate)}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {Array.isArray(project.departments) &&
+                  project.departments.map((dept) => (
+                    <span
+                      key={dept}
+                      className="inline-flex items-center rounded-full border border-white/15 bg-slate-800/60 px-2 py-1 text-[0.65rem] font-semibold uppercase text-slate-100"
+                    >
+                      {dept}
+                    </span>
+                  ))}
+                {Array.isArray(project.tags) &&
+                  project.tags.slice(0, 2).map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                {Array.isArray(project.tags) && project.tags.length > 2 && (
+                  <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100">
+                    +{project.tags.length - 2}
+                  </span>
+                )}
+              </div>
+            </Link>
+          ))}
+            </div>
+          )}
+        </div>
+      ) : !searchQuery.trim() && !loading ? (
+        <div className="rounded-lg border border-dashed border-white/10 bg-white/5 px-5 py-8 text-center text-slate-300">
+          <p className="text-sm">Start typing to search</p>
+          <p className="text-xs text-slate-400 mt-1">Search across projects, updates, and documents</p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
