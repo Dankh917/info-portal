@@ -22,6 +22,17 @@ export default function UserMenu() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  useEffect(() => {
+    if (status === "authenticated") {
+      console.log("[UserMenu] User authenticated", {
+        email: session?.user?.email,
+        role: session?.user?.role,
+      });
+    } else if (status === "unauthenticated") {
+      console.log("[UserMenu] User unauthenticated");
+    }
+  }, [status, session?.user?.email, session?.user?.role]);
+
   const email = session?.user?.email;
   const displayName = email || "Sign in";
   const initials = (email || "S").slice(0, 2).toUpperCase();
@@ -82,7 +93,10 @@ export default function UserMenu() {
           {session ? (
             <button
               type="button"
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => {
+                console.log("[UserMenu] Signing out user", { email: session.user.email });
+                signOut({ callbackUrl: "/login" });
+              }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >
@@ -91,9 +105,10 @@ export default function UserMenu() {
           ) : (
             <button
               type="button"
-              onClick={() =>
-                signIn("google", { callbackUrl: "/", prompt: "select_account" })
-              }
+              onClick={() => {
+                console.log("[UserMenu] Initiating Google sign in");
+                signIn("google", { callbackUrl: "/", prompt: "select_account" });
+              }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >

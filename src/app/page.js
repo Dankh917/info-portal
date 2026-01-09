@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import ProjectSearch from "./project-search";
 
 const formatDate = (value) => {
   try {
@@ -507,6 +508,8 @@ export default function Home() {
             </form>
           </div>
         </section>
+
+        <ProjectSearch />
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

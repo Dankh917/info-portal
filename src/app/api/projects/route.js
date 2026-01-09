@@ -120,8 +120,15 @@ export async function GET(request) {
       secret: process.env.NEXTAUTH_SECRET,
     });
     if (!token) {
+      console.warn("[API/projects] GET: Unauthorized access attempt");
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
+
+    console.log("[API/projects] GET: Fetching projects for user", {
+      userId: token.sub,
+      role: token.role,
+      departments: token.departments,
+    });
 
     const collection = await getProjectsCollection();
     const isAdmin = token.role === "admin";
@@ -156,6 +163,11 @@ export async function GET(request) {
       })
       .sort({ updatedAt: -1, createdAt: -1 })
       .toArray();
+
+    console.log("[API/projects] GET: Successfully fetched projects", {
+      count: projects.length,
+      userId: token.sub,
+    });
 
     const normalized = projects.map((p) => {
       const baseAssignments = (p.assignments || []).map((a) => ({
