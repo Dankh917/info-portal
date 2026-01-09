@@ -8,6 +8,7 @@ export default function UserMenu() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -41,11 +42,12 @@ export default function UserMenu() {
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        {session?.user?.image ? (
+        {session?.user?.image && !imageError ? (
           <img
             src={session.user.image}
             alt={email || "User avatar"}
             className="h-7 w-7 rounded-full border border-white/20 object-cover"
+            onError={() => setImageError(true)}
           />
         ) : (
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/20 text-[0.6rem] font-semibold text-emerald-100">
