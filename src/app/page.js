@@ -51,6 +51,10 @@ export default function Home() {
   const [departments, setDepartments] = useState([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(true);
   const [departmentsError, setDepartmentsError] = useState("");
+  const [editingUpdate, setEditingUpdate] = useState(null);
+  const [editForm, setEditForm] = useState({ title: "", message: "" });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
   const quickLinks = [
     {
@@ -218,6 +222,84 @@ export default function Home() {
     }
   };
 
+  const handleEdit = (update) => {
+    setEditingUpdate(update);
+    setEditForm({ title: update.title, message: update.message });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUpdate(null);
+    setEditForm({ title: "", message: "" });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUpdate || !editForm.title.trim() || !editForm.message.trim()) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/updates/${editingUpdate._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editForm.title.trim(),
+          message: editForm.message.trim(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to update.");
+      }
+
+      setUpdates((prev) =>
+        prev.map((u) =>
+          u._id === editingUpdate._id
+            ? { ...u, title: editForm.title.trim(), message: editForm.message.trim() }
+            : u
+        )
+      );
+      setEditingUpdate(null);
+      setEditForm({ title: "", message: "" });
+    } catch (err) {
+      alert(err.message || "Failed to update.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (updateId) => {
+    if (!confirm("Are you sure you want to delete this update?")) {
+      return;
+    }
+
+    setDeleting(updateId);
+    try {
+      const res = await fetch(`/api/updates/${updateId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to delete.");
+      }
+
+      setUpdates((prev) => prev.filter((u) => u._id !== updateId));
+    } catch (err) {
+      alert(err.message || "Failed to delete.");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const canEditOrDelete = (update) => {
+    if (!session?.user) return false;
+    return update.authorId === session.user.id || session.user.role === "admin";
+  };
+
   const disableSubmit =
     posting ||
     !form.title.trim() ||
@@ -288,9 +370,28 @@ export default function Home() {
                           <h3 className="text-lg font-semibold text-white">
                             {update.title}
                           </h3>
-                          <span className="text-xs text-slate-400">
-                            {formatDate(update.createdAt)}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400">
+                              {formatDate(update.createdAt)}
+                            </span>
+                            {canEditOrDelete(update) && (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => handleEdit(update)}
+                                  className="rounded-md bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/30"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(update._id)}
+                                  disabled={deleting === update._id}
+                                  className="rounded-md bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30 disabled:opacity-50"
+                                >
+                                  {deleting === update._id ? "..." : "Delete"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm leading-relaxed text-slate-200">
                           {update.message}
@@ -548,6 +649,53 @@ export default function Home() {
             ))}
           </div>
         </section>
+
+        {/* Edit Modal */}
+        {editingUpdate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+            <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-xl">
+              <h3 className="mb-4 text-xl font-semibold text-white">
+                Edit Update
+              </h3>
+              <div className="flex flex-col gap-4">
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                  Title
+                  <input
+                    type="text"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+                    className="w-full rounded-lg border border-white/20 bg-slate-800 px-3 py-2 text-base text-white placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                  Message
+                  <textarea
+                    rows="5"
+                    value={editForm.message}
+                    onChange={(e) => setEditForm((f) => ({ ...f, message: e.target.value }))}
+                    className="w-full rounded-lg border border-white/20 bg-slate-800 px-3 py-2 text-base text-white placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+                  />
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={saving || !editForm.title.trim() || !editForm.message.trim()}
+                    className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    disabled={saving}
+                    className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
