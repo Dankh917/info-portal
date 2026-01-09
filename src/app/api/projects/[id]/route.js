@@ -6,6 +6,7 @@ import {
   getDepartmentsCollection,
 } from "@/lib/mongo";
 import { ObjectId } from "mongodb";
+import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 const STATUS_OPTIONS = ["planned", "in_progress", "blocked", "done"];
@@ -168,7 +169,11 @@ export async function GET(request, context) {
       },
     });
   } catch (error) {
-    console.error("Failed to fetch project", error);
+    await logError("Failed to fetch project", error, {
+      route: `/api/projects/${id}`,
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to load project right now." },
       { status: 500 },
@@ -182,8 +187,9 @@ export async function PATCH(request, context) {
     return NextResponse.json({ error: "Project id is required." }, { status: 400 });
   }
 
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -326,7 +332,12 @@ export async function PATCH(request, context) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Failed to update project", error);
+    await logError("Failed to update project", error, {
+      route: `/api/projects/${id}`,
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to update project right now." },
       { status: 500 },
@@ -340,8 +351,9 @@ export async function DELETE(request, context) {
     return NextResponse.json({ error: "Project id is required." }, { status: 400 });
   }
 
+  let token;
   try {
-    const token = await getToken({
+    token = await getToken({
       req: request,
       secret: process.env.NEXTAUTH_SECRET,
     });
@@ -382,7 +394,12 @@ export async function DELETE(request, context) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Failed to delete project", error);
+    await logError("Failed to delete project", error, {
+      route: `/api/projects/${id}`,
+      method: request?.method,
+      url: request?.url,
+      userId: token?.sub,
+    });
     return NextResponse.json(
       { error: "Unable to delete project right now." },
       { status: 500 },

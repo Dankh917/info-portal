@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDocumentsCollection } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export async function GET() {
 
     return NextResponse.json({ documents: sanitized });
   } catch (error) {
+    await logError("Failed to list documents", error, {
+      route: "/api/documents",
+      method: "GET",
+    });
     return NextResponse.json(
       { error: "Unable to load documents." },
       { status: 500 }
@@ -56,6 +61,11 @@ export async function POST(request) {
       document: { _id: result.insertedId, ...payload, file: undefined },
     });
   } catch (error) {
+    await logError("Failed to upload document", error, {
+      route: "/api/documents",
+      method: request?.method,
+      url: request?.url,
+    });
     return NextResponse.json(
       { error: "Unable to upload document." },
       { status: 500 }

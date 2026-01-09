@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getDepartmentsCollection } from "@/lib/mongo";
+import { logError } from "@/lib/logger";
 
 const DEFAULT_DEPARTMENTS = [
   { name: "General" },
@@ -54,9 +55,12 @@ export async function GET(request) {
 
     return NextResponse.json({ departments });
   } catch (error) {
-    console.error("Failed to fetch departments", error);
-    return NextResponse.json
-    (
+    await logError("Failed to fetch departments", error, {
+      route: "/api/departments",
+      method: request?.method,
+      url: request?.url,
+    });
+    return NextResponse.json(
       { error: "Unable to load departments right now." },
       { status: 500 },
     );
