@@ -126,7 +126,11 @@ export async function PATCH(request) {
       try {
         await fs.unlink(absoluteOld);
       } catch (error) {
-        console.warn("[profile] Unable to delete old avatar", { error });
+        await logError("Unable to delete old avatar", error, {
+          route: "/api/profile",
+          userId: token?.sub,
+          oldPath: oldAvatarPath,
+        });
       }
     }
 

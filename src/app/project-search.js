@@ -35,6 +35,7 @@ export default function ProjectSearch() {
   const [projects, setProjects] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [users, setUsers] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [favoriteError, setFavoriteError] = useState("");
   const [favoriteUpdatingId, setFavoriteUpdatingId] = useState("");
@@ -51,16 +52,18 @@ export default function ProjectSearch() {
       try {
         console.log("[ProjectSearch] Starting data load for user:", session?.user?.email);
         
-        // Load projects, updates, and documents in parallel
-        const [projectsRes, updatesRes, documentsRes] = await Promise.all([
+        // Load projects, updates, documents, and users in parallel
+        const [projectsRes, updatesRes, documentsRes, usersRes] = await Promise.all([
           fetch("/api/projects", { cache: "no-store" }),
           fetch("/api/updates", { cache: "no-store" }),
           fetch("/api/documents", { cache: "no-store" }),
+          fetch("/api/users", { cache: "no-store" }),
         ]);
 
         const projectsData = await projectsRes.json();
         const updatesData = await updatesRes.json();
         const documentsData = await documentsRes.json();
+        const usersData = await usersRes.json();
 
         if (!projectsRes.ok) {
           const errorMsg = projectsData?.error || "Unable to load projects.";
@@ -95,10 +98,23 @@ export default function ProjectSearch() {
           throw new Error(errorMsg);
         }
 
+        if (!usersRes.ok) {
+          console.error("[ProjectSearch] Failed to load users:", {
+            status: usersRes.status,
+            statusText: usersRes.statusText,
+            error: usersData?.error || "Unable to load users.",
+          });
+          // Don't throw error for users, just set empty array
+          setUsers([]);
+        } else {
+          setUsers(usersData.users ?? []);
+        }
+
         console.log("[ProjectSearch] Successfully loaded data:", {
           projectsCount: projectsData.projects?.length || 0,
           updatesCount: updatesData.updates?.length || 0,
           documentsCount: documentsData.documents?.length || 0,
+          usersCount: usersData.users?.length || 0,
           userEmail: session?.user?.email,
         });
         setFavoriteIds(
@@ -121,6 +137,7 @@ export default function ProjectSearch() {
         setProjects([]);
         setUpdates([]);
         setDocuments([]);
+        setUsers([]);
         setFavoriteIds([]);
       } finally {
         setLoading(false);
@@ -243,8 +260,10 @@ export default function ProjectSearch() {
         try {
           const titleMatch = (document.title || "").toLowerCase().includes(query);
           const nameMatch = (document.originalName || "").toLowerCase().includes(query);
+          const uploaderMatch = (document.uploadedByUsername || "").toLowerCase().includes(query);
+          const uploaderNameMatch = (document.uploadedByName || "").toLowerCase().includes(query);
 
-          return titleMatch || nameMatch;
+          return titleMatch || nameMatch || uploaderMatch || uploaderNameMatch;
         } catch (err) {
           console.error("[ProjectSearch] Error filtering individual document:", {
             documentId: document._id,
@@ -266,10 +285,36 @@ export default function ProjectSearch() {
     }
   }, [debouncedSearchQuery, documents]);
 
+  const filteredUsers = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return [];
+    }
+
+    try {
+      const query = debouncedSearchQuery.toLowerCase();
+      const filtered = users.filter((user) => {
+        try {
+          const usernameMatch = (user.username || "").toLowerCase().includes(query);
+          const nameMatch = (user.name || "").toLowerCase().includes(query);
+          const emailMatch = (user.email || "").toLowerCase().includes(query);
+          const bioMatch = (user.bio || "").toLowerCase().includes(query);
+
+          return usernameMatch || nameMatch || emailMatch || bioMatch;
+        } catch (err) {
+          return false;
+        }
+      });
+
+      return filtered.slice(0, 10); // Limit to 10 users
+    } catch (err) {
+      return [];
+    }
+  }, [debouncedSearchQuery, users]);
+
   const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
   const favoriteLimitReached = favoriteIds.length >= 2;
 
-  const totalResults = filteredProjects.length + filteredUpdates.length + filteredDocuments.length;
+  const totalResults = filteredProjects.length + filteredUpdates.length + filteredDocuments.length + filteredUsers.length;
 
   // Track if user is actively typing
   const isSearching = searchQuery !== debouncedSearchQuery;
@@ -299,7 +344,7 @@ export default function ProjectSearch() {
         <div className="relative">
           <input
             type="text"
-            placeholder="Search projects, updates, and documents..."
+            placeholder="Search projects, updates, documents, and users..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 pr-24 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
@@ -351,6 +396,55 @@ export default function ProjectSearch() {
 
       {!loading && searchQuery.trim() && totalResults > 0 ? (
         <div className="space-y-4 max-h-96 overflow-y-auto">
+          {/* Users Section */}
+          {filteredUsers.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-xs uppercase tracking-[0.2em] text-emerald-300/60 px-2">
+                Users ({filteredUsers.length})
+              </h3>
+              {filteredUsers.map((user) => (
+                <Link
+                  key={user._id}
+                  href={user.username ? `/profile/${encodeURIComponent(user.username)}` : `/profile`}
+                  className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 shadow-inner hover:border-emerald-400/30 transition"
+                >
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={user.image || "https://placehold.co/40x40/0f172a/94a3b8?text=U"}
+                      alt={user.name || "User"}
+                      className="h-10 w-10 rounded-full border border-white/15 object-cover"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
+                        {user.name || user.email || "User"}
+                      </h4>
+                      <p className="text-xs text-slate-400 line-clamp-1">
+                        @{user.username || "user"}
+                      </p>
+                      {user.bio && (
+                        <p className="text-xs text-slate-500 line-clamp-1 mt-1">
+                          {user.bio}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {Array.isArray(user.departments) && user.departments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {user.departments.slice(0, 3).map((dept) => (
+                        <span
+                          key={dept}
+                          className="inline-flex items-center rounded-full border border-white/15 bg-slate-800/60 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-slate-100"
+                        >
+                          {dept}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+
           {/* Updates Section */}
           {filteredUpdates.length > 0 && (
             <div className="space-y-2">
@@ -414,6 +508,18 @@ export default function ProjectSearch() {
                       <p className="text-xs text-slate-400 line-clamp-1 mt-1">
                         {document.originalName}
                       </p>
+                      {document.uploadedByUsername && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          by{" "}
+                          <Link
+                            href={`/profile/${encodeURIComponent(document.uploadedByUsername)}`}
+                            className="text-emerald-300 hover:text-emerald-200 transition"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            @{document.uploadedByUsername}
+                          </Link>
+                        </p>
+                      )}
                     </div>
                     <span className="text-xs text-slate-500 whitespace-nowrap">
                       {formatDate(document.createdAt)}
@@ -536,7 +642,7 @@ export default function ProjectSearch() {
       ) : !searchQuery.trim() && !loading ? (
         <div className="rounded-lg border border-dashed border-white/10 bg-white/5 px-5 py-8 text-center text-slate-300">
           <p className="text-sm">Start typing to search</p>
-          <p className="text-xs text-slate-400 mt-1">Search across projects, updates, and documents</p>
+          <p className="text-xs text-slate-400 mt-1">Search across projects, updates, documents, and users</p>
         </div>
       ) : null}
     </section>
