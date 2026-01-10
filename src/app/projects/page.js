@@ -27,6 +27,12 @@ const formatDate = (value) => {
   }
 };
 
+const getDocumentExtension = (doc) => {
+  const filename = doc?.title || doc?.originalName || "";
+  const match = filename.match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : "";
+};
+
 const isDue = (value) => {
   if (!value) return false;
   const date = new Date(value);
@@ -229,6 +235,12 @@ export default function ProjectsPage() {
   const [instructionDeletingId, setInstructionDeletingId] = useState("");
   const [editingInstructionId, setEditingInstructionId] = useState("");
   const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState("");
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
 
   const loadProjects = async (options = {}) => {
     const { silent = false, preferredId = "" } = options;
@@ -334,10 +346,28 @@ export default function ProjectsPage() {
     }
   };
 
+  const loadDocuments = async () => {
+    setDocumentsLoading(true);
+    setDocumentsError("");
+    try {
+      const res = await fetch("/api/documents", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to load documents.");
+      }
+      setDocuments(data.documents ?? []);
+    } catch (err) {
+      setDocumentsError(err.message || "Unable to load documents.");
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadProjects({ preferredId: preferredProjectId });
     loadDepartments();
     loadUsers();
+    loadDocuments();
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -368,6 +398,26 @@ export default function ProjectsPage() {
     });
   }, [users, canManageProjects, form.departments]);
 
+  const documentMap = useMemo(() => {
+    return new Map(
+      documents.map((doc) => {
+        const id = doc?._id || doc?.id;
+        return [id, doc];
+      }),
+    );
+  }, [documents]);
+
+  const visibleDocuments = useMemo(() => {
+    const term = documentSearch.trim().toLowerCase();
+    const list = term
+      ? documents.filter((doc) => {
+          const name = `${doc?.title || ""} ${doc?.originalName || ""}`.toLowerCase();
+          return name.includes(term);
+        })
+      : documents.slice(0, 5);
+    return list;
+  }, [documents, documentSearch]);
+
   const toggleDepartment = (dept) => {
     setForm((prev) => {
       const exists = prev.departments.includes(dept);
@@ -384,6 +434,13 @@ export default function ProjectsPage() {
         : [...prev.assignments, { userId: user._id, name: user.name, email: user.email }];
       return { ...prev, assignments: next };
     });
+  };
+
+  const toggleDocument = (docId) => {
+    if (!docId) return;
+    setSelectedDocumentIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId],
+    );
   };
 
   const startEdit = (project) => {
@@ -497,6 +554,7 @@ export default function ProjectsPage() {
           text: instructionText,
           scope: instructionScope,
           userId: instructionScope === "assignment" ? instructionTarget || userId : null,
+          documentIds: selectedDocumentIds,
         }),
       });
       const data = await res.json();
@@ -506,6 +564,9 @@ export default function ProjectsPage() {
       setInstructionText("");
       setInstructionTarget("");
       setEditingInstructionId("");
+      setSelectedDocumentIds([]);
+      setDocumentSearch("");
+      setDocumentPickerOpen(false);
       await loadProjects();
     } catch (err) {
       setInstructionError(err.message || "Unable to add instruction.");
@@ -862,6 +923,27 @@ export default function ProjectsPage() {
                                     >
                                       {ins.text}
                                     </div>
+                                    {Array.isArray(ins.documents) && ins.documents.length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-2 text-[0.65rem] text-emerald-100/80">
+                                        {ins.documents.map((docId) => {
+                                          const doc = documentMap.get(docId);
+                                          const label = doc?.title || doc?.originalName || "Document";
+                                          const ext = getDocumentExtension(doc);
+                                          return (
+                                            <a
+                                              key={docId}
+                                              href={`/api/documents/${docId}`}
+                                              className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-0.5 text-[0.62rem] uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                                            >
+                                              <span className="max-w-[160px] truncate">{label}</span>
+                                              <span className="text-emerald-200/70">
+                                                {ext ? ext : "file"}
+                                              </span>
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {userId === a.userId && (
@@ -888,6 +970,12 @@ export default function ProjectsPage() {
                                           setInstructionTarget(a.userId);
                                           setEditingInstructionId(ins._id || "");
                                           setInstructionText(ins.text || "");
+                                          const nextDocs = Array.isArray(ins.documents)
+                                            ? ins.documents
+                                            : [];
+                                          setSelectedDocumentIds(nextDocs);
+                                          setDocumentSearch("");
+                                          setDocumentPickerOpen(nextDocs.length > 0);
                                         }}
                                         className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
                                       >
@@ -937,6 +1025,9 @@ export default function ProjectsPage() {
                               setInstructionScope("assignment");
                               setEditingInstructionId("");
                               setInstructionText("");
+                              setSelectedDocumentIds([]);
+                              setDocumentSearch("");
+                              setDocumentPickerOpen(false);
                             }}
                           />
                           <span>Assignment</span>
@@ -950,6 +1041,9 @@ export default function ProjectsPage() {
                               setInstructionTarget("");
                               setEditingInstructionId("");
                               setInstructionText("");
+                              setSelectedDocumentIds([]);
+                              setDocumentSearch("");
+                              setDocumentPickerOpen(false);
                             }}
                           />
                           <span>General</span>
@@ -1056,6 +1150,95 @@ export default function ProjectsPage() {
                         placeholder="Add an assignment..."
                         className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
                       />
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDocumentPickerOpen((prev) => !prev)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-950/50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100 transition hover:border-emerald-200/70"
+                        >
+                          {documentPickerOpen ? "Hide documents" : "Add documents"}
+                        </button>
+                        {selectedDocumentIds.length > 0 && (
+                          <span className="text-xs text-emerald-100/80">
+                            {selectedDocumentIds.length} attached
+                          </span>
+                        )}
+                      </div>
+                      {documentPickerOpen && (
+                        <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/40 p-3">
+                          <div className="mb-2 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={documentSearch}
+                              onChange={(e) => setDocumentSearch(e.target.value)}
+                              placeholder="Search documents..."
+                              className="w-full rounded-md border border-emerald-300/30 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-100/60 focus:border-emerald-200/70 focus:outline-none"
+                            />
+                            {selectedDocumentIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocumentIds([])}
+                                className="rounded-md border border-emerald-300/30 px-2 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                          {documentsError && (
+                            <div className="mb-2 rounded border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                              {documentsError}
+                            </div>
+                          )}
+                          {documentsLoading ? (
+                            <div className="space-y-2">
+                              {Array.from({ length: 3 }).map((_, index) => (
+                                <div
+                                  key={index}
+                                  className="h-8 rounded bg-emerald-200/10"
+                                />
+                              ))}
+                            </div>
+                          ) : visibleDocuments.length === 0 ? (
+                            <div className="rounded-md border border-emerald-300/20 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-100/80">
+                              {documents.length === 0
+                                ? "No documents uploaded yet."
+                                : "No matching documents found."}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {!documentSearch.trim() && (
+                                <div className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                                  Recent files
+                                </div>
+                              )}
+                              {visibleDocuments.map((doc) => {
+                                const docId = doc?._id || doc?.id;
+                                if (!docId) return null;
+                                const ext = getDocumentExtension(doc);
+                                const label = doc?.title || doc?.originalName || "Document";
+                                const selected = selectedDocumentIds.includes(docId);
+                                return (
+                                  <button
+                                    key={docId}
+                                    type="button"
+                                    onClick={() => toggleDocument(docId)}
+                                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+                                      selected
+                                        ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-50"
+                                        : "border-emerald-300/20 bg-emerald-950/40 text-emerald-100 hover:border-emerald-200/60"
+                                    }`}
+                                  >
+                                    <span className="truncate">{label}</span>
+                                    <span className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                                      {ext ? ext : "file"}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -1088,6 +1271,27 @@ export default function ProjectsPage() {
                           >
                             <div>
                               <div className="text-emerald-50">{ins.text}</div>
+                              {Array.isArray(ins.documents) && ins.documents.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2 text-[0.65rem] text-emerald-100/80">
+                                  {ins.documents.map((docId) => {
+                                    const doc = documentMap.get(docId);
+                                    const label = doc?.title || doc?.originalName || "Document";
+                                    const ext = getDocumentExtension(doc);
+                                    return (
+                                      <a
+                                        key={docId}
+                                        href={`/api/documents/${docId}`}
+                                        className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-0.5 text-[0.62rem] uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                                      >
+                                        <span className="max-w-[160px] truncate">{label}</span>
+                                        <span className="text-emerald-200/70">
+                                          {ext ? ext : "file"}
+                                        </span>
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
                               {ins.authorName && (
                                 <div className="text-[0.7rem] text-emerald-100/70 mt-1">
                                   {ins.authorName}
@@ -1103,6 +1307,12 @@ export default function ProjectsPage() {
                                     setInstructionTarget("");
                                     setEditingInstructionId(ins._id || "");
                                     setInstructionText(ins.text || "");
+                                    const nextDocs = Array.isArray(ins.documents)
+                                      ? ins.documents
+                                      : [];
+                                    setSelectedDocumentIds(nextDocs);
+                                    setDocumentSearch("");
+                                    setDocumentPickerOpen(nextDocs.length > 0);
                                   }}
                                   className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
                                 >
