@@ -26,7 +26,18 @@ const formatDate = (value) => {
   }
 };
 
+const isDue = (value) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  const dueUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return dueUtc <= todayUtc;
+};
+
 function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete }) {
+  const due = isDue(project.dueDate);
   return (
     <div
       role="button"
@@ -52,7 +63,13 @@ function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete 
       </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
         {project.dueDate && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-900/50 px-3 py-1 text-emerald-100">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${
+              due
+                ? "border-rose-400/70 bg-rose-500/25 text-rose-100 shadow-[0_0_18px_rgba(248,113,113,0.6)]"
+                : "border-emerald-300/40 bg-emerald-900/50 text-emerald-100"
+            }`}
+          >
             Due {formatDate(project.dueDate)}
           </span>
         )}
@@ -524,6 +541,7 @@ export default function ProjectsPage() {
   };
 
   const visibleProjects = projects;
+  const isSelectedDue = selected?.dueDate ? isDue(selected.dueDate) : false;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -620,7 +638,13 @@ export default function ProjectsPage() {
 
                 <div className="flex flex-wrap gap-2 text-xs text-emerald-100/90">
                   {selected.dueDate && (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/40 bg-emerald-950/50 px-3 py-1">
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
+                        isSelectedDue
+                          ? "border-rose-400/70 bg-rose-500/25 text-rose-100 shadow-[0_0_18px_rgba(248,113,113,0.6)]"
+                          : "border-emerald-200/40 bg-emerald-950/50 text-emerald-100"
+                      }`}
+                    >
                       Due {formatDate(selected.dueDate)}
                     </span>
                   )}
