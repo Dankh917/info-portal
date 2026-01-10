@@ -135,6 +135,18 @@ export async function GET(request) {
     const isPm = token.role === "pm";
     const pmDepartments = Array.isArray(token.departments) ? token.departments : [];
 
+    const client = await clientPromise;
+    const usersCollection = client.db(dbName).collection("users");
+    const userObjectId = new ObjectId(token.sub);
+    const userRecord = await usersCollection.findOne(
+      { _id: userObjectId },
+      { projection: { favoriteProjectIds: 1 } },
+    );
+    const storedFavoriteIds = Array.isArray(userRecord?.favoriteProjectIds)
+      ? userRecord.favoriteProjectIds.map((id) => id?.toString?.() || id).filter(Boolean)
+      : [];
+    const uniqueFavoriteIds = Array.from(new Set(storedFavoriteIds));
+
     const query =
       isAdmin
         ? {}
@@ -169,6 +181,18 @@ export async function GET(request) {
       userId: token.sub,
     });
 
+    const accessibleIds = new Set(
+      projects.map((p) => p._id?.toString?.() || p._id).filter(Boolean),
+    );
+    const favoriteProjectIds = uniqueFavoriteIds.filter((id) => accessibleIds.has(id));
+    if (favoriteProjectIds.length !== uniqueFavoriteIds.length) {
+      await usersCollection.updateOne(
+        { _id: userObjectId },
+        { $set: { favoriteProjectIds } },
+      );
+    }
+    const favoriteSet = new Set(favoriteProjectIds);
+
     const normalized = projects.map((p) => {
       const baseAssignments = (p.assignments || []).map((a) => ({
         ...a,
@@ -180,6 +204,7 @@ export async function GET(request) {
       return {
         ...p,
         _id: p._id?.toString?.() || p._id,
+        isFavorite: favoriteSet.has(p._id?.toString?.() || p._id),
         assignments: filteredAssignments,
         generalInstructions: (p.generalInstructions || []).map((ins) => ({
           ...ins,
@@ -188,7 +213,7 @@ export async function GET(request) {
       };
     });
 
-    return NextResponse.json({ projects: normalized });
+    return NextResponse.json({ projects: normalized, favoriteProjectIds });
   } catch (error) {
     await logError("Failed to fetch projects", error, {
       route: "/api/projects",

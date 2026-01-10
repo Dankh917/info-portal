@@ -143,6 +143,7 @@ export const authOptions = {
               $set: { 
                 role: "general", 
                 departments: ["General"],
+                favoriteProjectIds: [],
                 createdAt: new Date(),
               } 
             },

@@ -36,7 +36,55 @@ const isDue = (value) => {
   return dueUtc <= todayUtc;
 };
 
-function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete }) {
+function FavoriteButton({ isFavorite, disabled, onToggle }) {
+  const label = isFavorite ? "Unfavorite project" : "Favorite project";
+  const title = disabled && !isFavorite ? "Favorite limit reached" : label;
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      disabled={disabled}
+      aria-pressed={isFavorite}
+      aria-label={label}
+      title={title}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm transition ${
+        isFavorite
+          ? "border-amber-300/70 bg-amber-400/20 text-amber-200 shadow-[0_0_12px_rgba(251,191,36,0.6)]"
+          : "border-white/15 bg-white/5 text-slate-300 hover:border-amber-300/60 hover:text-amber-100"
+      } ${disabled && !isFavorite ? "cursor-not-allowed opacity-40 hover:border-white/15 hover:text-slate-300" : ""}`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-4 w-4"
+        fill={isFavorite ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M11.48 3.5a.6.6 0 0 1 1.04 0l2.22 4.5a.6.6 0 0 0 .45.33l4.97.72a.6.6 0 0 1 .33 1.02l-3.6 3.5a.6.6 0 0 0-.17.53l.85 4.95a.6.6 0 0 1-.88.64L12.28 17a.6.6 0 0 0-.56 0l-4.43 2.33a.6.6 0 0 1-.88-.64l.85-4.95a.6.6 0 0 0-.17-.53l-3.6-3.5a.6.6 0 0 1 .33-1.02l4.97-.72a.6.6 0 0 0 .45-.33l2.22-4.5z"
+        />
+      </svg>
+    </button>
+  );
+}
+
+function ProjectCard({
+  project,
+  onSelect,
+  selected,
+  canManage,
+  onEdit,
+  onDelete,
+  isFavorite,
+  disableFavorite,
+  onToggleFavorite,
+}) {
   const due = isDue(project.dueDate);
   return (
     <div
@@ -57,6 +105,11 @@ function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete 
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-white">{project.title}</h3>
+        <FavoriteButton
+          isFavorite={isFavorite}
+          disabled={disableFavorite}
+          onToggle={() => onToggleFavorite(project._id, !isFavorite)}
+        />
       </div>
       <p className="mt-1 text-sm text-slate-300 line-clamp-2">
         {project.summary || "No summary"}
@@ -142,6 +195,9 @@ export default function ProjectsPage() {
   const [deptError, setDeptError] = useState("");
   const [users, setUsers] = useState([]);
   const [usersError, setUsersError] = useState("");
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [favoriteError, setFavoriteError] = useState("");
+  const [favoriteUpdatingId, setFavoriteUpdatingId] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -183,28 +239,30 @@ export default function ProjectsPage() {
       if (!res.ok) {
         throw new Error(data?.error || "Unable to load projects.");
       }
-    const normalized = (data.projects ?? [])
-      .map((p) => {
-        const idSource = p._id || p.id;
-        const id = typeof idSource === "string" ? idSource : idSource?.toString?.();
-        if (!id) return null;
-        return {
-          ...p,
-          _id: id,
-          createdBy: p.createdBy || null,
-          assignments: (p.assignments || []).map((a) => {
-            const aidSource = a.userId || a._id;
-            const aid = typeof aidSource === "string" ? aidSource : aidSource?.toString?.();
-            return {
-              ...a,
-              userId: aid || "",
-              instructions: (a.instructions || []).map((ins) => {
-                const iidSource = ins._id || ins.id;
-                const iid = typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
-                return { ...ins, _id: iid || "" };
-              }),
-            };
-          }),
+      setFavoriteIds(Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : []);
+      const normalized = (data.projects ?? [])
+        .map((p) => {
+          const idSource = p._id || p.id;
+          const id = typeof idSource === "string" ? idSource : idSource?.toString?.();
+          if (!id) return null;
+          return {
+            ...p,
+            _id: id,
+            createdBy: p.createdBy || null,
+            assignments: (p.assignments || []).map((a) => {
+              const aidSource = a.userId || a._id;
+              const aid = typeof aidSource === "string" ? aidSource : aidSource?.toString?.();
+              return {
+                ...a,
+                userId: aid || "",
+                instructions: (a.instructions || []).map((ins) => {
+                  const iidSource = ins._id || ins.id;
+                  const iid =
+                    typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
+                  return { ...ins, _id: iid || "" };
+                }),
+              };
+            }),
             generalInstructions: (p.generalInstructions || []).map((ins) => {
               const iidSource = ins._id || ins.id;
               const iid = typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
@@ -513,6 +571,28 @@ export default function ProjectsPage() {
     }
   };
 
+  const toggleFavorite = async (projectId, nextFavorite) => {
+    if (!projectId) return;
+    setFavoriteUpdatingId(projectId);
+    setFavoriteError("");
+    try {
+      const res = await fetch("/api/projects/favorites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, favorite: nextFavorite }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to update favorite.");
+      }
+      setFavoriteIds(Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : []);
+    } catch (err) {
+      setFavoriteError(err.message || "Unable to update favorite.");
+    } finally {
+      setFavoriteUpdatingId("");
+    }
+  };
+
   const currentAssignment = useMemo(() => {
     if (!selected || !userId) return null;
     return (selected.assignments || []).find((a) => a.userId === userId) || null;
@@ -540,7 +620,20 @@ export default function ProjectsPage() {
     return isAdmin || (isPm && canManageSelected);
   };
 
-  const visibleProjects = projects;
+  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const favoriteProjects = useMemo(
+    () => projects.filter((project) => favoriteSet.has(project._id)),
+    [projects, favoriteSet],
+  );
+  const otherProjects = useMemo(
+    () => projects.filter((project) => !favoriteSet.has(project._id)),
+    [projects, favoriteSet],
+  );
+  const favoriteLimitReached = favoriteIds.length >= 2;
+  const isSelectedFavorite = selected?._id ? favoriteSet.has(selected._id) : false;
+  const selectedFavoriteDisabled =
+    !!selected?._id &&
+    (favoriteUpdatingId === selected._id || (favoriteLimitReached && !isSelectedFavorite));
   const isSelectedDue = selected?.dueDate ? isDue(selected.dueDate) : false;
 
   return (
@@ -582,17 +675,56 @@ export default function ProjectsPage() {
           }`}
         >
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Latest projects</h2>
-              <span className="text-xs text-slate-300">
-                {loading ? "Loading..." : `${visibleProjects.length} item(s)`}
-              </span>
-            </div>
+            {favoriteError && (
+              <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {favoriteError}
+              </div>
+            )}
             {error && (
               <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                 {error}
               </div>
             )}
+            {!loading && favoriteProjects.length > 0 && (
+              <div className="mb-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-200/80">
+                    Favorites
+                  </h2>
+                  <span className="text-xs text-amber-100/80">
+                    {favoriteProjects.length} of 2
+                  </span>
+                </div>
+                <div className="grid gap-3">
+                  {favoriteProjects.map((project) => {
+                    const isFavorite = favoriteSet.has(project._id);
+                    const disableFavorite =
+                      favoriteUpdatingId === project._id ||
+                      (favoriteLimitReached && !isFavorite);
+                    return (
+                      <ProjectCard
+                        key={project._id}
+                        project={project}
+                        selected={selected?._id === project._id}
+                        onSelect={handleSelect}
+                        canManage={canManageProjects}
+                        onEdit={startEdit}
+                        onDelete={deleteProject}
+                        isFavorite={isFavorite}
+                        disableFavorite={disableFavorite}
+                        onToggleFavorite={toggleFavorite}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Latest projects</h2>
+              <span className="text-xs text-slate-300">
+                {loading ? "Loading..." : `${otherProjects.length} item(s)`}
+              </span>
+            </div>
             {loading ? (
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, index) => (
@@ -602,23 +734,38 @@ export default function ProjectsPage() {
                   />
                 ))}
               </div>
-            ) : visibleProjects.length === 0 ? (
+            ) : projects.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center text-slate-300">
-                {canManageProjects ? "No projects yet. Create one to get started." : "No project assigned."}
+                {canManageProjects
+                  ? "No projects yet. Create one to get started."
+                  : "No project assigned."}
+              </div>
+            ) : otherProjects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-6 text-center text-slate-300">
+                No other projects.
               </div>
             ) : (
               <div className="grid gap-3">
-                {visibleProjects.map((project) => (
-                  <ProjectCard
-                    key={project._id}
-                    project={project}
-                    selected={selected?._id === project._id}
-                    onSelect={handleSelect}
-                    canManage={canManageProjects}
-                    onEdit={startEdit}
-                    onDelete={deleteProject}
-                  />
-                ))}
+                {otherProjects.map((project) => {
+                  const isFavorite = favoriteSet.has(project._id);
+                  const disableFavorite =
+                    favoriteUpdatingId === project._id ||
+                    (favoriteLimitReached && !isFavorite);
+                  return (
+                    <ProjectCard
+                      key={project._id}
+                      project={project}
+                      selected={selected?._id === project._id}
+                      onSelect={handleSelect}
+                      canManage={canManageProjects}
+                      onEdit={startEdit}
+                      onDelete={deleteProject}
+                      isFavorite={isFavorite}
+                      disableFavorite={disableFavorite}
+                      onToggleFavorite={toggleFavorite}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -634,6 +781,11 @@ export default function ProjectsPage() {
                     <h2 className="text-2xl font-semibold text-white">{selected.title}</h2>
                     <p className="text-sm text-emerald-100/80">{selected.summary || "No summary"}</p>
                   </div>
+                  <FavoriteButton
+                    isFavorite={isSelectedFavorite}
+                    disabled={selectedFavoriteDisabled}
+                    onToggle={() => toggleFavorite(selected._id, !isSelectedFavorite)}
+                  />
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs text-emerald-100/90">
