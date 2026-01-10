@@ -18,7 +18,7 @@ export async function GET(request) {
 
     const collection = await getDocumentsCollection();
     const documents = await collection
-      .find({ uploadedBy: token.sub }, { projection: { file: 0 } })
+      .find({}, { projection: { file: 0 } })
       .sort({ createdAt: -1 })
       .toArray();
 

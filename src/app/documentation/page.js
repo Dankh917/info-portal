@@ -48,7 +48,7 @@ export default function Documentation() {
     setLoadError("");
 
     try {
-      const res = await fetch("/api/documents", { cache: "no-store" });
+      const res = await fetch("/api/documents", { cache: "no-store", credentials: "include" });
       const data = await res.json();
 
       if (!res.ok) {
@@ -86,6 +86,7 @@ export default function Documentation() {
       const res = await fetch("/api/documents", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
       const data = await res.json();
 
@@ -179,6 +180,7 @@ export default function Documentation() {
                     <th>Name</th>
                     <th>Type</th>
                     <th>Size</th>
+                    <th>Uploaded By</th>
                     <th>Uploaded</th>
                     <th></th>
                   </tr>
@@ -186,13 +188,13 @@ export default function Documentation() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className={styles.tableEmpty}>
+                      <td colSpan={6} className={styles.tableEmpty}>
                         Loading documents...
                       </td>
                     </tr>
                   ) : documents.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className={styles.tableEmpty}>
+                      <td colSpan={6} className={styles.tableEmpty}>
                         No documents uploaded yet.
                       </td>
                     </tr>
@@ -212,6 +214,7 @@ export default function Documentation() {
                           </span>
                         </td>
                         <td>{formatSize(doc.size)}</td>
+                        <td>{doc.uploadedByEmail || "-"}</td>
                         <td>
                           {doc.createdAt
                             ? new Date(doc.createdAt).toLocaleDateString()
@@ -234,9 +237,6 @@ export default function Documentation() {
             </div>
             <div className={styles.meta}>
               <span>{documents.length} document(s)</span>
-              <Link href="/" className={styles.link}>
-                Back to Home
-              </Link>
             </div>
             {loadError && <p className={styles.error}>{loadError}</p>}
           </section>
