@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -965,7 +966,13 @@ export default function ProjectsPage() {
                           className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2"
                         >
                           <div className="flex items-center justify-between gap-2 text-sm text-white">
-                            <span>{a.name || a.email || "User"}</span>
+                            <Link
+                              href={`/profile/${a.username || a.userId}`}
+                              className="text-emerald-100 underline-offset-2 hover:text-emerald-50 hover:underline"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {a.name || a.email || "User"}
+                            </Link>
                             <span className="text-[0.75rem] text-emerald-100">
                               {(a.departments || []).join(", ") || "No dept"}
                             </span>

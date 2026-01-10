@@ -1,10 +1,31 @@
 import { NextResponse } from "next/server";
-import { getDocumentsCollection } from "@/lib/mongo";
+import { ObjectId } from "mongodb";
+import { clientPromise, getDocumentsCollection } from "@/lib/mongo";
 import { logError } from "@/lib/logger";
 import { getToken } from "next-auth/jwt";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const dbName = process.env.MONGODB_DB || "info-portal";
+
+const deriveUsername = (value) =>
+  (value || "")
+    .toString()
+    .trim()
+    .replace(/@.+$/, "")
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 50) || "user";
+
+const toObjectId = (value) => {
+  try {
+    return new ObjectId(value);
+  } catch (error) {
+    return null;
+  }
+};
 
 export async function GET(request) {
   try {
@@ -22,10 +43,47 @@ export async function GET(request) {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const sanitized = documents.map((doc) => ({
-      ...doc,
-      _id: doc._id.toString(),
-    }));
+    const uploaderIds = documents
+      .map((doc) => toObjectId(doc.uploadedBy))
+      .filter(Boolean);
+
+    let uploaderMap = new Map();
+    if (uploaderIds.length) {
+      const client = await clientPromise;
+      const usersCollection = client.db(dbName).collection("users");
+      const uploaderRecords = await usersCollection
+        .find({ _id: { $in: uploaderIds } })
+        .project({ username: 1, normalizedUsername: 1, name: 1, email: 1 })
+        .toArray();
+
+      uploaderMap = new Map(
+        uploaderRecords.map((u) => [
+          u._id.toString(),
+          {
+            username:
+              u.username ||
+              u.normalizedUsername ||
+              deriveUsername(u.name || u.email || u._id.toString()),
+            name: u.name || u.email || "",
+          },
+        ]),
+      );
+    }
+
+    const sanitized = documents.map((doc) => {
+      const uploader = uploaderMap.get(doc.uploadedBy?.toString?.() || "");
+      const username =
+        doc.uploadedByUsername ||
+        uploader?.username ||
+        deriveUsername(doc.uploadedByEmail || doc.uploadedBy || "");
+
+      return {
+        ...doc,
+        _id: doc._id.toString(),
+        uploadedByUsername: username,
+        uploadedByName: uploader?.name || username || doc.uploadedByEmail || "-",
+      };
+    });
 
     return NextResponse.json({ documents: sanitized });
   } catch (error) {
@@ -69,6 +127,7 @@ export async function POST(request) {
       size: file.size || buffer.length,
       uploadedBy: token.sub,
       uploadedByEmail: token.email,
+      uploadedByUsername: token.username || deriveUsername(token.email || token.name || token.sub),
       createdAt: new Date(),
       file: buffer,
     };

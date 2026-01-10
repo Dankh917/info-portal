@@ -214,7 +214,18 @@ export default function Documentation() {
                           </span>
                         </td>
                         <td>{formatSize(doc.size)}</td>
-                        <td>{doc.uploadedByEmail || "-"}</td>
+                        <td>
+                          {doc.uploadedByUsername ? (
+                            <Link
+                              className={styles.link}
+                              href={`/profile/${encodeURIComponent(doc.uploadedByUsername)}`}
+                            >
+                              {doc.uploadedByUsername}
+                            </Link>
+                          ) : (
+                            doc.uploadedByName || "-"
+                          )}
+                        </td>
                         <td>
                           {doc.createdAt
                             ? new Date(doc.createdAt).toLocaleDateString()

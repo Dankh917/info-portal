@@ -86,7 +86,7 @@ async function resolveAssignments(assignments, allowedDepartments) {
     if (!userId) continue;
     const userRecord = await usersCollection.findOne(
       { _id: new ObjectId(userId) },
-      { projection: { name: 1, email: 1, departments: 1, department: 1 } },
+      { projection: { name: 1, email: 1, departments: 1, department: 1, username: 1, normalizedUsername: 1 } },
     );
     if (!userRecord) continue;
 
@@ -106,6 +106,7 @@ async function resolveAssignments(assignments, allowedDepartments) {
       userId: userRecord._id.toString(),
       name: userRecord.name || userRecord.email || "User",
       email: userRecord.email || "",
+        username: userRecord.username || userRecord.normalizedUsername || userRecord.email || userRecord._id.toString(),
       departments: userDepartments,
       instructions: existingInstructions,
     });
