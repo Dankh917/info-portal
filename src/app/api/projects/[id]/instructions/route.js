@@ -15,6 +15,18 @@ const canPmAccessProject = (project, token) => {
   );
 };
 
+const normalizeDocumentIds = (input) => {
+  if (!Array.isArray(input)) return [];
+  return Array.from(
+    new Set(
+      input
+        .map((id) => (typeof id === "string" ? id.trim() : ""))
+        .filter(Boolean)
+        .slice(0, 10),
+    ),
+  );
+};
+
 export async function POST(request, context) {
   const { id } = await context?.params;
   if (!id) {
@@ -35,6 +47,7 @@ export async function POST(request, context) {
     const text = body?.text?.trim();
     const scope = body?.scope === "general" ? "general" : "assignment";
     const targetUserId = body?.userId;
+    const documentIds = normalizeDocumentIds(body?.documentIds);
 
     if (!text) {
       return NextResponse.json({ error: "Instruction text is required." }, { status: 400 });
@@ -63,6 +76,7 @@ export async function POST(request, context) {
       updatedAt: new Date(),
       done: false,
       doneAt: null,
+      documents: documentIds,
     };
 
     if (scope === "general") {
@@ -132,11 +146,13 @@ export async function PATCH(request, context) {
     const scope = body?.scope === "general" ? "general" : "assignment";
     const targetUserId = body?.userId;
     const done = typeof body?.done === "boolean" ? body.done : null;
+    const documentIds = normalizeDocumentIds(body?.documentIds);
+    const hasDocumentUpdate = Array.isArray(body?.documentIds);
 
     if (!instructionId) {
       return NextResponse.json({ error: "Instruction id is required." }, { status: 400 });
     }
-    if (!text && done === null) {
+    if (!text && done === null && !hasDocumentUpdate) {
       return NextResponse.json({ error: "Instruction update is required." }, { status: 400 });
     }
 
@@ -180,6 +196,10 @@ export async function PATCH(request, context) {
         general[idx].text = text;
         general[idx].updatedAt = new Date();
       }
+      if (hasDocumentUpdate) {
+        general[idx].documents = documentIds;
+        general[idx].updatedAt = new Date();
+      }
 
       await collection.updateOne(
         { _id: new ObjectId(id) },
@@ -218,8 +238,14 @@ export async function PATCH(request, context) {
       if (!canEdit) {
         return NextResponse.json({ error: "Forbidden." }, { status: 403 });
       }
-      instructions[insIndex].text = text;
-      instructions[insIndex].updatedAt = new Date();
+      if (text) {
+        instructions[insIndex].text = text;
+        instructions[insIndex].updatedAt = new Date();
+      }
+      if (hasDocumentUpdate) {
+        instructions[insIndex].documents = documentIds;
+        instructions[insIndex].updatedAt = new Date();
+      }
     }
     assignments[assignmentIndex].instructions = instructions;
 

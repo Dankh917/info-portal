@@ -35,6 +35,9 @@ export default function ProjectSearch() {
   const [projects, setProjects] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [favoriteError, setFavoriteError] = useState("");
+  const [favoriteUpdatingId, setFavoriteUpdatingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,6 +101,11 @@ export default function ProjectSearch() {
           documentsCount: documentsData.documents?.length || 0,
           userEmail: session?.user?.email,
         });
+        setFavoriteIds(
+          Array.isArray(projectsData.favoriteProjectIds)
+            ? projectsData.favoriteProjectIds
+            : [],
+        );
         setProjects(projectsData.projects ?? []);
         setUpdates(updatesData.updates ?? []);
         setDocuments(documentsData.documents ?? []);
@@ -113,6 +121,7 @@ export default function ProjectSearch() {
         setProjects([]);
         setUpdates([]);
         setDocuments([]);
+        setFavoriteIds([]);
       } finally {
         setLoading(false);
       }
@@ -124,6 +133,28 @@ export default function ProjectSearch() {
       console.log("[ProjectSearch] No user session available, skipping data load");
     }
   }, [session?.user]);
+
+  const toggleFavorite = async (projectId, nextFavorite) => {
+    if (!projectId) return;
+    setFavoriteUpdatingId(projectId);
+    setFavoriteError("");
+    try {
+      const res = await fetch("/api/projects/favorites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, favorite: nextFavorite }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to update favorite.");
+      }
+      setFavoriteIds(Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : []);
+    } catch (err) {
+      setFavoriteError(err.message || "Unable to update favorite.");
+    } finally {
+      setFavoriteUpdatingId("");
+    }
+  };
 
   // Filter projects and updates based on debounced search query with useMemo for performance
   const filteredProjects = useMemo(() => {
@@ -235,6 +266,9 @@ export default function ProjectSearch() {
     }
   }, [debouncedSearchQuery, documents]);
 
+  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const favoriteLimitReached = favoriteIds.length >= 2;
+
   const totalResults = filteredProjects.length + filteredUpdates.length + filteredDocuments.length;
 
   // Track if user is actively typing
@@ -286,6 +320,11 @@ export default function ProjectSearch() {
       {error && (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
           {error}
+        </div>
+      )}
+      {favoriteError && (
+        <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {favoriteError}
         </div>
       )}
 
@@ -398,52 +437,99 @@ export default function ProjectSearch() {
               <h3 className="text-xs uppercase tracking-[0.2em] text-emerald-300/60 px-2">
                 Projects ({filteredProjects.length})
               </h3>
-              {filteredProjects.map((project) => (
-            <Link
-              key={project._id}
-              href={`/projects?id=${project._id}`}
-              className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 transition hover:border-emerald-400/40 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-emerald-500/10"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
-                    {project.title}
-                  </h3>
-                  <p className="text-xs text-slate-400 line-clamp-1 mt-1">
-                    {project.summary || "No summary"}
-                  </p>
-                </div>
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {formatDate(project.dueDate)}
-                </span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {Array.isArray(project.departments) &&
-                  project.departments.map((dept) => (
-                    <span
-                      key={dept}
-                      className="inline-flex items-center rounded-full border border-white/15 bg-slate-800/60 px-2 py-1 text-[0.65rem] font-semibold uppercase text-slate-100"
-                    >
-                      {dept}
-                    </span>
-                  ))}
-                {Array.isArray(project.tags) &&
-                  project.tags.slice(0, 2).map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                {Array.isArray(project.tags) && project.tags.length > 2 && (
-                  <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100">
-                    +{project.tags.length - 2}
-                  </span>
-                )}
-              </div>
-            </Link>
-          ))}
+              {filteredProjects.map((project) => {
+                const isFavorite = favoriteSet.has(project._id);
+                const disableFavorite =
+                  favoriteUpdatingId === project._id ||
+                  (favoriteLimitReached && !isFavorite);
+                const favoriteLabel = isFavorite ? "Unfavorite project" : "Favorite project";
+                const favoriteTitle =
+                  disableFavorite && !isFavorite ? "Favorite limit reached" : favoriteLabel;
+                return (
+                  <Link
+                    key={project._id}
+                    href={`/projects?id=${project._id}`}
+                    className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 transition hover:border-emerald-400/40 hover:bg-slate-900/90 hover:shadow-lg hover:shadow-emerald-500/10"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
+                          {project.title}
+                        </h3>
+                        <p className="text-xs text-slate-400 line-clamp-1 mt-1">
+                          {project.summary || "No summary"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 whitespace-nowrap">
+                          {formatDate(project.dueDate)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleFavorite(project._id, !isFavorite);
+                          }}
+                          disabled={disableFavorite}
+                          aria-pressed={isFavorite}
+                          aria-label={favoriteLabel}
+                          title={favoriteTitle}
+                          className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[0.7rem] transition ${
+                            isFavorite
+                              ? "border-amber-300/70 bg-amber-400/20 text-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.5)]"
+                              : "border-white/15 bg-white/5 text-slate-300 hover:border-amber-300/60 hover:text-amber-100"
+                          } ${disableFavorite && !isFavorite ? "cursor-not-allowed opacity-40 hover:border-white/15 hover:text-slate-300" : ""}`}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4"
+                            fill={isFavorite ? "currentColor" : "none"}
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M11.48 3.5a.6.6 0 0 1 1.04 0l2.22 4.5a.6.6 0 0 0 .45.33l4.97.72a.6.6 0 0 1 .33 1.02l-3.6 3.5a.6.6 0 0 0-.17.53l.85 4.95a.6.6 0 0 1-.88.64L12.28 17a.6.6 0 0 0-.56 0l-4.43 2.33a.6.6 0 0 1-.88-.64l.85-4.95a.6.6 0 0 0-.17-.53l-3.6-3.5a.6.6 0 0 1 .33-1.02l4.97-.72a.6.6 0 0 0 .45-.33l2.22-4.5z"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {isFavorite && (
+                        <span className="inline-flex items-center rounded-full border border-amber-300/50 bg-amber-400/10 px-2 py-1 text-[0.65rem] font-semibold uppercase text-amber-100">
+                          Favorite
+                        </span>
+                      )}
+                      {Array.isArray(project.departments) &&
+                        project.departments.map((dept) => (
+                          <span
+                            key={dept}
+                            className="inline-flex items-center rounded-full border border-white/15 bg-slate-800/60 px-2 py-1 text-[0.65rem] font-semibold uppercase text-slate-100"
+                          >
+                            {dept}
+                          </span>
+                        ))}
+                      {Array.isArray(project.tags) &&
+                        project.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      {Array.isArray(project.tags) && project.tags.length > 2 && (
+                        <span className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100">
+                          +{project.tags.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>

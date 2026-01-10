@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 const STATUS_OPTIONS = [
@@ -9,6 +10,9 @@ const STATUS_OPTIONS = [
   { value: "blocked", label: "Blocked" },
   { value: "done", label: "Done" },
 ];
+
+const acceptedTypes = ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf";
+const acceptedExtensions = ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf"];
 
 const statusColor = {
   planned: "bg-slate-700 text-slate-100 border-slate-500/60",
@@ -26,7 +30,79 @@ const formatDate = (value) => {
   }
 };
 
-function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete }) {
+const getDocumentExtension = (doc) => {
+  const filename = doc?.title || doc?.originalName || "";
+  const match = filename.match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : "";
+};
+
+const isAcceptedFile = (file) => {
+  if (!file?.name) return false;
+  const match = file.name.match(/\.([a-z0-9]+)$/i);
+  const ext = match ? match[1].toLowerCase() : "";
+  return acceptedExtensions.includes(ext);
+};
+
+const isDue = (value) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  const dueUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return dueUtc <= todayUtc;
+};
+
+function FavoriteButton({ isFavorite, disabled, onToggle }) {
+  const label = isFavorite ? "Unfavorite project" : "Favorite project";
+  const title = disabled && !isFavorite ? "Favorite limit reached" : label;
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      disabled={disabled}
+      aria-pressed={isFavorite}
+      aria-label={label}
+      title={title}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-sm transition ${
+        isFavorite
+          ? "border-amber-300/70 bg-amber-400/20 text-amber-200 shadow-[0_0_12px_rgba(251,191,36,0.6)]"
+          : "border-white/15 bg-white/5 text-slate-300 hover:border-amber-300/60 hover:text-amber-100"
+      } ${disabled && !isFavorite ? "cursor-not-allowed opacity-40 hover:border-white/15 hover:text-slate-300" : ""}`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-4 w-4"
+        fill={isFavorite ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.6"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M11.48 3.5a.6.6 0 0 1 1.04 0l2.22 4.5a.6.6 0 0 0 .45.33l4.97.72a.6.6 0 0 1 .33 1.02l-3.6 3.5a.6.6 0 0 0-.17.53l.85 4.95a.6.6 0 0 1-.88.64L12.28 17a.6.6 0 0 0-.56 0l-4.43 2.33a.6.6 0 0 1-.88-.64l.85-4.95a.6.6 0 0 0-.17-.53l-3.6-3.5a.6.6 0 0 1 .33-1.02l4.97-.72a.6.6 0 0 0 .45-.33l2.22-4.5z"
+        />
+      </svg>
+    </button>
+  );
+}
+
+function ProjectCard({
+  project,
+  onSelect,
+  selected,
+  canManage,
+  onEdit,
+  onDelete,
+  isFavorite,
+  disableFavorite,
+  onToggleFavorite,
+}) {
+  const due = isDue(project.dueDate);
   return (
     <div
       role="button"
@@ -46,13 +122,24 @@ function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete 
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-white">{project.title}</h3>
+        <FavoriteButton
+          isFavorite={isFavorite}
+          disabled={disableFavorite}
+          onToggle={() => onToggleFavorite(project._id, !isFavorite)}
+        />
       </div>
       <p className="mt-1 text-sm text-slate-300 line-clamp-2">
         {project.summary || "No summary"}
       </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
         {project.dueDate && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-900/50 px-3 py-1 text-emerald-100">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${
+              due
+                ? "border-rose-400/70 bg-rose-500/25 text-rose-100 shadow-[0_0_18px_rgba(248,113,113,0.6)]"
+                : "border-emerald-300/40 bg-emerald-900/50 text-emerald-100"
+            }`}
+          >
             Due {formatDate(project.dueDate)}
           </span>
         )}
@@ -107,6 +194,8 @@ function ProjectCard({ project, onSelect, selected, canManage, onEdit, onDelete 
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const preferredProjectId = searchParams?.get("id") || "";
   const isAdmin = session?.user?.role === "admin";
   const isPm = session?.user?.role === "pm";
   const userId = session?.user?.id;
@@ -125,6 +214,9 @@ export default function ProjectsPage() {
   const [deptError, setDeptError] = useState("");
   const [users, setUsers] = useState([]);
   const [usersError, setUsersError] = useState("");
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [favoriteError, setFavoriteError] = useState("");
+  const [favoriteUpdatingId, setFavoriteUpdatingId] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -153,9 +245,18 @@ export default function ProjectsPage() {
   const [instructionDeletingId, setInstructionDeletingId] = useState("");
   const [editingInstructionId, setEditingInstructionId] = useState("");
   const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [documentsError, setDocumentsError] = useState("");
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [assignmentDropActive, setAssignmentDropActive] = useState(false);
+  const [assignmentUploadError, setAssignmentUploadError] = useState("");
+  const [assignmentUploading, setAssignmentUploading] = useState(false);
 
   const loadProjects = async (options = {}) => {
-    const { silent = false } = options;
+    const { silent = false, preferredId = "" } = options;
     if (!silent) {
       setLoading(true);
       setError("");
@@ -166,28 +267,30 @@ export default function ProjectsPage() {
       if (!res.ok) {
         throw new Error(data?.error || "Unable to load projects.");
       }
-    const normalized = (data.projects ?? [])
-      .map((p) => {
-        const idSource = p._id || p.id;
-        const id = typeof idSource === "string" ? idSource : idSource?.toString?.();
-        if (!id) return null;
-        return {
-          ...p,
-          _id: id,
-          createdBy: p.createdBy || null,
-          assignments: (p.assignments || []).map((a) => {
-            const aidSource = a.userId || a._id;
-            const aid = typeof aidSource === "string" ? aidSource : aidSource?.toString?.();
-            return {
-              ...a,
-              userId: aid || "",
-              instructions: (a.instructions || []).map((ins) => {
-                const iidSource = ins._id || ins.id;
-                const iid = typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
-                return { ...ins, _id: iid || "" };
-              }),
-            };
-          }),
+      setFavoriteIds(Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : []);
+      const normalized = (data.projects ?? [])
+        .map((p) => {
+          const idSource = p._id || p.id;
+          const id = typeof idSource === "string" ? idSource : idSource?.toString?.();
+          if (!id) return null;
+          return {
+            ...p,
+            _id: id,
+            createdBy: p.createdBy || null,
+            assignments: (p.assignments || []).map((a) => {
+              const aidSource = a.userId || a._id;
+              const aid = typeof aidSource === "string" ? aidSource : aidSource?.toString?.();
+              return {
+                ...a,
+                userId: aid || "",
+                instructions: (a.instructions || []).map((ins) => {
+                  const iidSource = ins._id || ins.id;
+                  const iid =
+                    typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
+                  return { ...ins, _id: iid || "" };
+                }),
+              };
+            }),
             generalInstructions: (p.generalInstructions || []).map((ins) => {
               const iidSource = ins._id || ins.id;
               const iid = typeof iidSource === "string" ? iidSource : iidSource?.toString?.();
@@ -199,7 +302,7 @@ export default function ProjectsPage() {
       setProjects(normalized);
       if (normalized.length) {
         setSelected((prev) => {
-          const currentId = prev?._id;
+          const currentId = preferredId || prev?._id;
           const match = currentId ? normalized.find((p) => p._id === currentId) : null;
           if (match) {
             setSelectedId(match._id);
@@ -256,10 +359,75 @@ export default function ProjectsPage() {
     }
   };
 
+  const loadDocuments = async () => {
+    setDocumentsLoading(true);
+    setDocumentsError("");
+    try {
+      const res = await fetch("/api/documents", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to load documents.");
+      }
+      setDocuments(data.documents ?? []);
+    } catch (err) {
+      setDocumentsError(err.message || "Unable to load documents.");
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
+  const uploadDocuments = async (files) => {
+    if (!files || files.length === 0) return;
+    setAssignmentUploading(true);
+    setAssignmentUploadError("");
+    const uploadedDocs = [];
+
+    try {
+      for (const file of files) {
+        if (!isAcceptedFile(file)) {
+          throw new Error("Only Word, Excel, PowerPoint, or PDF files are allowed.");
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("title", file.name);
+
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to upload document.");
+        }
+        const doc = data.document;
+        if (doc) {
+          const docId =
+            typeof doc._id === "string" ? doc._id : doc._id?.toString?.() || "";
+          uploadedDocs.push({ ...doc, _id: docId || doc._id });
+          if (docId) {
+            setSelectedDocumentIds((prev) =>
+              prev.includes(docId) ? prev : [...prev, docId],
+            );
+          }
+        }
+      }
+
+      if (uploadedDocs.length > 0) {
+        setDocuments((prev) => [...uploadedDocs, ...prev]);
+        setDocumentPickerOpen(true);
+      }
+    } catch (err) {
+      setAssignmentUploadError(err.message || "Unable to upload document.");
+    } finally {
+      setAssignmentUploading(false);
+    }
+  };
+
   useEffect(() => {
-    loadProjects();
+    loadProjects({ preferredId: preferredProjectId });
     loadDepartments();
     loadUsers();
+    loadDocuments();
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -280,7 +448,7 @@ export default function ProjectsPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.role]);
+  }, [session?.user?.role, preferredProjectId]);
 
   const filteredUsers = useMemo(() => {
     if (!canManageProjects || form.departments.length === 0) return users;
@@ -289,6 +457,26 @@ export default function ProjectsPage() {
       return depts.some((d) => form.departments.includes(d));
     });
   }, [users, canManageProjects, form.departments]);
+
+  const documentMap = useMemo(() => {
+    return new Map(
+      documents.map((doc) => {
+        const id = doc?._id || doc?.id;
+        return [id, doc];
+      }),
+    );
+  }, [documents]);
+
+  const visibleDocuments = useMemo(() => {
+    const term = documentSearch.trim().toLowerCase();
+    const list = term
+      ? documents.filter((doc) => {
+          const name = `${doc?.title || ""} ${doc?.originalName || ""}`.toLowerCase();
+          return name.includes(term);
+        })
+      : documents.slice(0, 5);
+    return list;
+  }, [documents, documentSearch]);
 
   const toggleDepartment = (dept) => {
     setForm((prev) => {
@@ -306,6 +494,13 @@ export default function ProjectsPage() {
         : [...prev.assignments, { userId: user._id, name: user.name, email: user.email }];
       return { ...prev, assignments: next };
     });
+  };
+
+  const toggleDocument = (docId) => {
+    if (!docId) return;
+    setSelectedDocumentIds((prev) =>
+      prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId],
+    );
   };
 
   const startEdit = (project) => {
@@ -419,6 +614,7 @@ export default function ProjectsPage() {
           text: instructionText,
           scope: instructionScope,
           userId: instructionScope === "assignment" ? instructionTarget || userId : null,
+          documentIds: selectedDocumentIds,
         }),
       });
       const data = await res.json();
@@ -428,6 +624,9 @@ export default function ProjectsPage() {
       setInstructionText("");
       setInstructionTarget("");
       setEditingInstructionId("");
+      setSelectedDocumentIds([]);
+      setDocumentSearch("");
+      setDocumentPickerOpen(false);
       await loadProjects();
     } catch (err) {
       setInstructionError(err.message || "Unable to add instruction.");
@@ -496,6 +695,28 @@ export default function ProjectsPage() {
     }
   };
 
+  const toggleFavorite = async (projectId, nextFavorite) => {
+    if (!projectId) return;
+    setFavoriteUpdatingId(projectId);
+    setFavoriteError("");
+    try {
+      const res = await fetch("/api/projects/favorites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, favorite: nextFavorite }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to update favorite.");
+      }
+      setFavoriteIds(Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : []);
+    } catch (err) {
+      setFavoriteError(err.message || "Unable to update favorite.");
+    } finally {
+      setFavoriteUpdatingId("");
+    }
+  };
+
   const currentAssignment = useMemo(() => {
     if (!selected || !userId) return null;
     return (selected.assignments || []).find((a) => a.userId === userId) || null;
@@ -523,7 +744,21 @@ export default function ProjectsPage() {
     return isAdmin || (isPm && canManageSelected);
   };
 
-  const visibleProjects = projects;
+  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const favoriteProjects = useMemo(
+    () => projects.filter((project) => favoriteSet.has(project._id)),
+    [projects, favoriteSet],
+  );
+  const otherProjects = useMemo(
+    () => projects.filter((project) => !favoriteSet.has(project._id)),
+    [projects, favoriteSet],
+  );
+  const favoriteLimitReached = favoriteIds.length >= 2;
+  const isSelectedFavorite = selected?._id ? favoriteSet.has(selected._id) : false;
+  const selectedFavoriteDisabled =
+    !!selected?._id &&
+    (favoriteUpdatingId === selected._id || (favoriteLimitReached && !isSelectedFavorite));
+  const isSelectedDue = selected?.dueDate ? isDue(selected.dueDate) : false;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -564,17 +799,56 @@ export default function ProjectsPage() {
           }`}
         >
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Latest projects</h2>
-              <span className="text-xs text-slate-300">
-                {loading ? "Loading..." : `${visibleProjects.length} item(s)`}
-              </span>
-            </div>
+            {favoriteError && (
+              <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {favoriteError}
+              </div>
+            )}
             {error && (
               <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                 {error}
               </div>
             )}
+            {!loading && favoriteProjects.length > 0 && (
+              <div className="mb-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-200/80">
+                    Favorites
+                  </h2>
+                  <span className="text-xs text-amber-100/80">
+                    {favoriteProjects.length} of 2
+                  </span>
+                </div>
+                <div className="grid gap-3">
+                  {favoriteProjects.map((project) => {
+                    const isFavorite = favoriteSet.has(project._id);
+                    const disableFavorite =
+                      favoriteUpdatingId === project._id ||
+                      (favoriteLimitReached && !isFavorite);
+                    return (
+                      <ProjectCard
+                        key={project._id}
+                        project={project}
+                        selected={selected?._id === project._id}
+                        onSelect={handleSelect}
+                        canManage={canManageProjects}
+                        onEdit={startEdit}
+                        onDelete={deleteProject}
+                        isFavorite={isFavorite}
+                        disableFavorite={disableFavorite}
+                        onToggleFavorite={toggleFavorite}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Latest projects</h2>
+              <span className="text-xs text-slate-300">
+                {loading ? "Loading..." : `${otherProjects.length} item(s)`}
+              </span>
+            </div>
             {loading ? (
               <div className="space-y-3">
                 {Array.from({ length: 3 }).map((_, index) => (
@@ -584,23 +858,38 @@ export default function ProjectsPage() {
                   />
                 ))}
               </div>
-            ) : visibleProjects.length === 0 ? (
+            ) : projects.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center text-slate-300">
-                {canManageProjects ? "No projects yet. Create one to get started." : "No project assigned."}
+                {canManageProjects
+                  ? "No projects yet. Create one to get started."
+                  : "No project assigned."}
+              </div>
+            ) : otherProjects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-6 text-center text-slate-300">
+                No other projects.
               </div>
             ) : (
               <div className="grid gap-3">
-                {visibleProjects.map((project) => (
-                  <ProjectCard
-                    key={project._id}
-                    project={project}
-                    selected={selected?._id === project._id}
-                    onSelect={handleSelect}
-                    canManage={canManageProjects}
-                    onEdit={startEdit}
-                    onDelete={deleteProject}
-                  />
-                ))}
+                {otherProjects.map((project) => {
+                  const isFavorite = favoriteSet.has(project._id);
+                  const disableFavorite =
+                    favoriteUpdatingId === project._id ||
+                    (favoriteLimitReached && !isFavorite);
+                  return (
+                    <ProjectCard
+                      key={project._id}
+                      project={project}
+                      selected={selected?._id === project._id}
+                      onSelect={handleSelect}
+                      canManage={canManageProjects}
+                      onEdit={startEdit}
+                      onDelete={deleteProject}
+                      isFavorite={isFavorite}
+                      disableFavorite={disableFavorite}
+                      onToggleFavorite={toggleFavorite}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -616,11 +905,22 @@ export default function ProjectsPage() {
                     <h2 className="text-2xl font-semibold text-white">{selected.title}</h2>
                     <p className="text-sm text-emerald-100/80">{selected.summary || "No summary"}</p>
                   </div>
+                  <FavoriteButton
+                    isFavorite={isSelectedFavorite}
+                    disabled={selectedFavoriteDisabled}
+                    onToggle={() => toggleFavorite(selected._id, !isSelectedFavorite)}
+                  />
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs text-emerald-100/90">
                   {selected.dueDate && (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/40 bg-emerald-950/50 px-3 py-1">
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
+                        isSelectedDue
+                          ? "border-rose-400/70 bg-rose-500/25 text-rose-100 shadow-[0_0_18px_rgba(248,113,113,0.6)]"
+                          : "border-emerald-200/40 bg-emerald-950/50 text-emerald-100"
+                      }`}
+                    >
                       Due {formatDate(selected.dueDate)}
                     </span>
                   )}
@@ -683,6 +983,27 @@ export default function ProjectsPage() {
                                     >
                                       {ins.text}
                                     </div>
+                                    {Array.isArray(ins.documents) && ins.documents.length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-2 text-[0.65rem] text-emerald-100/80">
+                                        {ins.documents.map((docId) => {
+                                          const doc = documentMap.get(docId);
+                                          const label = doc?.title || doc?.originalName || "Document";
+                                          const ext = getDocumentExtension(doc);
+                                          return (
+                                            <a
+                                              key={docId}
+                                              href={`/api/documents/${docId}`}
+                                              className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-0.5 text-[0.62rem] uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                                            >
+                                              <span className="max-w-[160px] truncate">{label}</span>
+                                              <span className="text-emerald-200/70">
+                                                {ext ? ext : "file"}
+                                              </span>
+                                            </a>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {userId === a.userId && (
@@ -709,6 +1030,12 @@ export default function ProjectsPage() {
                                           setInstructionTarget(a.userId);
                                           setEditingInstructionId(ins._id || "");
                                           setInstructionText(ins.text || "");
+                                          const nextDocs = Array.isArray(ins.documents)
+                                            ? ins.documents
+                                            : [];
+                                          setSelectedDocumentIds(nextDocs);
+                                          setDocumentSearch("");
+                                          setDocumentPickerOpen(nextDocs.length > 0);
                                         }}
                                         className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
                                       >
@@ -758,6 +1085,9 @@ export default function ProjectsPage() {
                               setInstructionScope("assignment");
                               setEditingInstructionId("");
                               setInstructionText("");
+                              setSelectedDocumentIds([]);
+                              setDocumentSearch("");
+                              setDocumentPickerOpen(false);
                             }}
                           />
                           <span>Assignment</span>
@@ -771,6 +1101,9 @@ export default function ProjectsPage() {
                               setInstructionTarget("");
                               setEditingInstructionId("");
                               setInstructionText("");
+                              setSelectedDocumentIds([]);
+                              setDocumentSearch("");
+                              setDocumentPickerOpen(false);
                             }}
                           />
                           <span>General</span>
@@ -877,6 +1210,147 @@ export default function ProjectsPage() {
                         placeholder="Add an assignment..."
                         className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
                       />
+                      <div
+                        className={`rounded-lg border border-dashed px-4 py-3 text-xs text-emerald-100/80 transition ${
+                          assignmentDropActive
+                            ? "border-emerald-200/70 bg-emerald-500/10"
+                            : "border-emerald-300/30 bg-emerald-950/40"
+                        }`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setAssignmentDropActive(true);
+                        }}
+                        onDragLeave={() => setAssignmentDropActive(false)}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          setAssignmentDropActive(false);
+                          const files = Array.from(event.dataTransfer.files || []);
+                          uploadDocuments(files);
+                        }}
+                      >
+                        <label className="flex flex-col gap-2">
+                          <span className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                            Drag & drop documents here
+                          </span>
+                          <span>
+                            or{" "}
+                            <span className="text-emerald-100 underline">
+                              browse your computer
+                            </span>
+                          </span>
+                          <input
+                            type="file"
+                            multiple
+                            accept={acceptedTypes}
+                            className="hidden"
+                            onChange={(event) => {
+                              const files = Array.from(event.target.files || []);
+                              uploadDocuments(files);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <div className="mt-2 text-[0.65rem] text-emerald-100/60">
+                          Uploads go to Documents and auto-attach to this assignment.
+                        </div>
+                      </div>
+                      {assignmentUploadError && (
+                        <div className="rounded-md border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                          {assignmentUploadError}
+                        </div>
+                      )}
+                      {assignmentUploading && (
+                        <div className="text-xs text-emerald-100/70">Uploading...</div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDocumentPickerOpen((prev) => !prev)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-emerald-300/30 bg-emerald-950/50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100 transition hover:border-emerald-200/70"
+                        >
+                          {documentPickerOpen ? "Hide documents" : "Add documents"}
+                        </button>
+                        {selectedDocumentIds.length > 0 && (
+                          <span className="text-xs text-emerald-100/80">
+                            {selectedDocumentIds.length} attached
+                          </span>
+                        )}
+                      </div>
+                      {documentPickerOpen && (
+                        <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/40 p-3">
+                          <div className="mb-2 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={documentSearch}
+                              onChange={(e) => setDocumentSearch(e.target.value)}
+                              placeholder="Search documents..."
+                              className="w-full rounded-md border border-emerald-300/30 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-100/60 focus:border-emerald-200/70 focus:outline-none"
+                            />
+                            {selectedDocumentIds.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocumentIds([])}
+                                className="rounded-md border border-emerald-300/30 px-2 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                          {documentsError && (
+                            <div className="mb-2 rounded border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                              {documentsError}
+                            </div>
+                          )}
+                          {documentsLoading ? (
+                            <div className="space-y-2">
+                              {Array.from({ length: 3 }).map((_, index) => (
+                                <div
+                                  key={index}
+                                  className="h-8 rounded bg-emerald-200/10"
+                                />
+                              ))}
+                            </div>
+                          ) : visibleDocuments.length === 0 ? (
+                            <div className="rounded-md border border-emerald-300/20 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-100/80">
+                              {documents.length === 0
+                                ? "No documents uploaded yet."
+                                : "No matching documents found."}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {!documentSearch.trim() && (
+                                <div className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                                  Recent files
+                                </div>
+                              )}
+                              {visibleDocuments.map((doc) => {
+                                const docId = doc?._id || doc?.id;
+                                if (!docId) return null;
+                                const ext = getDocumentExtension(doc);
+                                const label = doc?.title || doc?.originalName || "Document";
+                                const selected = selectedDocumentIds.includes(docId);
+                                return (
+                                  <button
+                                    key={docId}
+                                    type="button"
+                                    onClick={() => toggleDocument(docId)}
+                                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+                                      selected
+                                        ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-50"
+                                        : "border-emerald-300/20 bg-emerald-950/40 text-emerald-100 hover:border-emerald-200/60"
+                                    }`}
+                                  >
+                                    <span className="truncate">{label}</span>
+                                    <span className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                                      {ext ? ext : "file"}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -909,6 +1383,27 @@ export default function ProjectsPage() {
                           >
                             <div>
                               <div className="text-emerald-50">{ins.text}</div>
+                              {Array.isArray(ins.documents) && ins.documents.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2 text-[0.65rem] text-emerald-100/80">
+                                  {ins.documents.map((docId) => {
+                                    const doc = documentMap.get(docId);
+                                    const label = doc?.title || doc?.originalName || "Document";
+                                    const ext = getDocumentExtension(doc);
+                                    return (
+                                      <a
+                                        key={docId}
+                                        href={`/api/documents/${docId}`}
+                                        className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-950/40 px-2 py-0.5 text-[0.62rem] uppercase tracking-[0.12em] text-emerald-100 transition hover:border-emerald-200/70"
+                                      >
+                                        <span className="max-w-[160px] truncate">{label}</span>
+                                        <span className="text-emerald-200/70">
+                                          {ext ? ext : "file"}
+                                        </span>
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
                               {ins.authorName && (
                                 <div className="text-[0.7rem] text-emerald-100/70 mt-1">
                                   {ins.authorName}
@@ -924,6 +1419,12 @@ export default function ProjectsPage() {
                                     setInstructionTarget("");
                                     setEditingInstructionId(ins._id || "");
                                     setInstructionText(ins.text || "");
+                                    const nextDocs = Array.isArray(ins.documents)
+                                      ? ins.documents
+                                      : [];
+                                    setSelectedDocumentIds(nextDocs);
+                                    setDocumentSearch("");
+                                    setDocumentPickerOpen(nextDocs.length > 0);
                                   }}
                                   className="inline-flex items-center gap-1 rounded-md bg-white/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-100 shadow-sm transition hover:-translate-y-[1px] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-slate-300/30 cursor-pointer"
                                 >

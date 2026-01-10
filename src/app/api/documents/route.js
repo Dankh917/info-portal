@@ -77,7 +77,11 @@ export async function POST(request) {
     const result = await collection.insertOne(payload);
 
     return NextResponse.json({
-      document: { _id: result.insertedId, ...payload, file: undefined },
+      document: {
+        _id: result.insertedId.toString(),
+        ...payload,
+        file: undefined,
+      },
     });
   } catch (error) {
     await logError("Failed to upload document", error, {
