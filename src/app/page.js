@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import ProjectSearch from "./project-search";
 import ParticleBackground from "./particle-background";
 
@@ -31,8 +32,29 @@ const tagStyle = (color) => {
   };
 };
 
+const statusStyle = (status) => {
+  switch (status) {
+    case "planned":
+      return "border-slate-400/40 bg-slate-500/10 text-slate-200";
+    case "in_progress":
+      return "border-emerald-300/40 bg-emerald-500/10 text-emerald-100";
+    case "blocked":
+      return "border-amber-300/40 bg-amber-500/10 text-amber-100";
+    case "done":
+      return "border-emerald-300/50 bg-emerald-500/20 text-emerald-50";
+    default:
+      return "border-white/20 bg-white/5 text-slate-200";
+  }
+};
+
+const formatStatus = (status) => {
+  if (!status) return "unknown";
+  return status.replaceAll("_", " ");
+};
+
 export default function Home() {
   const { data: session } = useSession();
+  const userId = session?.user?.id;
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
@@ -56,6 +78,9 @@ export default function Home() {
   const [editForm, setEditForm] = useState({ title: "", message: "" });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [favoriteProjects, setFavoriteProjects] = useState([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(true);
+  const [favoritesError, setFavoritesError] = useState("");
 
   const quickLinks = [
     {
@@ -155,6 +180,47 @@ export default function Home() {
     loadTags();
     loadDepartments();
   }, []);
+
+  useEffect(() => {
+    const loadFavorites = async () => {
+      setFavoritesLoading(true);
+      setFavoritesError("");
+
+      try {
+        const res = await fetch("/api/projects", { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to load favorites.");
+        }
+
+        const favorites = new Set(
+          Array.isArray(data.favoriteProjectIds) ? data.favoriteProjectIds : [],
+        );
+        const projects = Array.isArray(data.projects) ? data.projects : [];
+        const onlyFavorites = projects.filter(
+          (project) => favorites.has(project._id) || project.isFavorite,
+        );
+
+        setFavoriteProjects(onlyFavorites);
+      } catch (err) {
+        setFavoritesError(err.message || "Unable to load favorites.");
+        setFavoriteProjects([]);
+      } finally {
+        setFavoritesLoading(false);
+      }
+    };
+
+    if (!session?.user) {
+      setFavoriteProjects([]);
+      setFavoritesError("");
+      setFavoritesLoading(false);
+      return;
+    }
+
+    loadFavorites();
+  }, [session?.user]);
+
 
   const toggleTag = (tagName) => {
     setForm((f) => {
@@ -309,6 +375,7 @@ export default function Home() {
     departmentsLoading ||
     form.tags.length === 0 ||
     form.departments.length === 0;
+  const showFavorites = favoritesLoading || favoriteProjects.length > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -329,6 +396,8 @@ export default function Home() {
             </div>
           </div>
         </header>
+
+        <ProjectSearch />
 
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
@@ -419,7 +488,7 @@ export default function Home() {
                             update.tags.map((tag) => {
                               const name = tag?.name || tag;
                               const color = tag?.color;
-                              const icon = tag?.icon || "🏷️";
+                              const icon = tag?.icon || "???";
                               const style = tagStyle(color);
                               return (
                                 <span
@@ -584,10 +653,10 @@ export default function Home() {
                             style={style}
                             className={`group inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] shadow-inner shadow-black/30 transition hover:-translate-y-[1px] hover:shadow-emerald-500/30 ${selected ? "ring-2 ring-white/60" : ""}`}
                           >
-                            <span className="text-sm">{tag.icon || "🏷️"}</span>
+                            <span className="text-sm">{tag.icon || "???"}</span>
                             <span className="text-[0.78rem]">{tag.name}</span>
                             {selected && (
-                              <span className="text-[0.7rem] text-white/90">✓</span>
+                              <span className="text-[0.7rem] text-white/90">?</span>
                             )}
                           </button>
                         );
@@ -612,7 +681,123 @@ export default function Home() {
           </div>
         </section>
 
-        <ProjectSearch />
+        {showFavorites && (
+          <section className="rounded-2xl border border-amber-300/20 bg-amber-900/10 p-5 shadow-xl shadow-black/30 backdrop-blur">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-amber-50">Favorite projects</h2>
+              {favoritesLoading ? (
+                <span className="text-xs text-amber-100/70">Loading...</span>
+              ) : (
+                <span className="text-xs text-amber-100/70">
+                  {favoriteProjects.length} saved
+                </span>
+              )}
+            </div>
+            {favoritesError && (
+              <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {favoritesError}
+              </div>
+            )}
+            {favoritesLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="animate-pulse rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                  >
+                    <div className="mb-2 h-3 w-28 rounded bg-white/20" />
+                    <div className="h-3 w-11/12 rounded bg-white/15" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {favoriteProjects.map((project) => {
+                  const assignment = userId
+                    ? (project.assignments || []).find((a) => a.userId === userId)
+                    : null;
+                  const instructions = Array.isArray(assignment?.instructions)
+                    ? assignment.instructions
+                    : [];
+                  return (
+                    <Link
+                      key={project._id}
+                      href={`/projects?id=${project._id}`}
+                      className="group rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 shadow-inner shadow-black/40 transition hover:-translate-y-[1px] hover:border-amber-300/40"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-white">{project.title}</h3>
+                        <span className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+                          Open
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-300 line-clamp-2">
+                        {project.summary || "No summary"}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.65rem] uppercase tracking-[0.12em] text-slate-200">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-1 ${statusStyle(
+                            project.status,
+                          )}`}
+                        >
+                          {formatStatus(project.status)}
+                        </span>
+                        {project.dueDate && (
+                          <span className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-2 py-1 text-slate-200">
+                            Due {formatDate(project.dueDate)}
+                          </span>
+                        )}
+                      </div>
+                      {Array.isArray(project.departments) && project.departments.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {project.departments.slice(0, 2).map((dept) => (
+                            <span
+                              key={dept}
+                              className="inline-flex items-center rounded-full border border-white/10 bg-slate-800/60 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-slate-100"
+                            >
+                              {dept}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {assignment && (
+                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2 text-xs text-white">
+                            <span>{assignment.name || assignment.email || "You"}</span>
+                            <span className="text-[0.7rem] text-emerald-100">
+                              {(assignment.departments || []).join(", ") || "No dept"}
+                            </span>
+                          </div>
+                          {instructions.length > 0 && (
+                            <ul className="mt-2 space-y-1 text-xs text-emerald-50/90">
+                              {instructions.map((ins) => {
+                                const insKey = ins._id || ins.id || ins.text;
+                                return (
+                                  <li
+                                    key={insKey}
+                                    className="flex items-start justify-between gap-3 rounded bg-emerald-500/10 px-2 py-1"
+                                  >
+                                    <div
+                                      className={
+                                        ins.done ? "line-through text-emerald-200/70" : ""
+                                      }
+                                    >
+                                      {ins.text}
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

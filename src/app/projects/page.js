@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
 const STATUS_OPTIONS = [
@@ -177,6 +178,8 @@ function ProjectCard({
 
 export default function ProjectsPage() {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const preferredProjectId = searchParams?.get("id") || "";
   const isAdmin = session?.user?.role === "admin";
   const isPm = session?.user?.role === "pm";
   const userId = session?.user?.id;
@@ -228,7 +231,7 @@ export default function ProjectsPage() {
   const [assigneeMenuOpen, setAssigneeMenuOpen] = useState(false);
 
   const loadProjects = async (options = {}) => {
-    const { silent = false } = options;
+    const { silent = false, preferredId = "" } = options;
     if (!silent) {
       setLoading(true);
       setError("");
@@ -274,7 +277,7 @@ export default function ProjectsPage() {
       setProjects(normalized);
       if (normalized.length) {
         setSelected((prev) => {
-          const currentId = prev?._id;
+          const currentId = preferredId || prev?._id;
           const match = currentId ? normalized.find((p) => p._id === currentId) : null;
           if (match) {
             setSelectedId(match._id);
@@ -332,7 +335,7 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    loadProjects();
+    loadProjects({ preferredId: preferredProjectId });
     loadDepartments();
     loadUsers();
 
@@ -355,7 +358,7 @@ export default function ProjectsPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.role]);
+  }, [session?.user?.role, preferredProjectId]);
 
   const filteredUsers = useMemo(() => {
     if (!canManageProjects || form.departments.length === 0) return users;
