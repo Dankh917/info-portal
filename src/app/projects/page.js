@@ -11,6 +11,9 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done" },
 ];
 
+const acceptedTypes = ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf";
+const acceptedExtensions = ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf"];
+
 const statusColor = {
   planned: "bg-slate-700 text-slate-100 border-slate-500/60",
   in_progress: "bg-emerald-900/60 text-emerald-100 border-emerald-400/50",
@@ -31,6 +34,13 @@ const getDocumentExtension = (doc) => {
   const filename = doc?.title || doc?.originalName || "";
   const match = filename.match(/\.([a-z0-9]+)$/i);
   return match ? match[1].toLowerCase() : "";
+};
+
+const isAcceptedFile = (file) => {
+  if (!file?.name) return false;
+  const match = file.name.match(/\.([a-z0-9]+)$/i);
+  const ext = match ? match[1].toLowerCase() : "";
+  return acceptedExtensions.includes(ext);
 };
 
 const isDue = (value) => {
@@ -241,6 +251,9 @@ export default function ProjectsPage() {
   const [documentSearch, setDocumentSearch] = useState("");
   const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [assignmentDropActive, setAssignmentDropActive] = useState(false);
+  const [assignmentUploadError, setAssignmentUploadError] = useState("");
+  const [assignmentUploading, setAssignmentUploading] = useState(false);
 
   const loadProjects = async (options = {}) => {
     const { silent = false, preferredId = "" } = options;
@@ -360,6 +373,53 @@ export default function ProjectsPage() {
       setDocumentsError(err.message || "Unable to load documents.");
     } finally {
       setDocumentsLoading(false);
+    }
+  };
+
+  const uploadDocuments = async (files) => {
+    if (!files || files.length === 0) return;
+    setAssignmentUploading(true);
+    setAssignmentUploadError("");
+    const uploadedDocs = [];
+
+    try {
+      for (const file of files) {
+        if (!isAcceptedFile(file)) {
+          throw new Error("Only Word, Excel, PowerPoint, or PDF files are allowed.");
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("title", file.name);
+
+        const res = await fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to upload document.");
+        }
+        const doc = data.document;
+        if (doc) {
+          const docId =
+            typeof doc._id === "string" ? doc._id : doc._id?.toString?.() || "";
+          uploadedDocs.push({ ...doc, _id: docId || doc._id });
+          if (docId) {
+            setSelectedDocumentIds((prev) =>
+              prev.includes(docId) ? prev : [...prev, docId],
+            );
+          }
+        }
+      }
+
+      if (uploadedDocs.length > 0) {
+        setDocuments((prev) => [...uploadedDocs, ...prev]);
+        setDocumentPickerOpen(true);
+      }
+    } catch (err) {
+      setAssignmentUploadError(err.message || "Unable to upload document.");
+    } finally {
+      setAssignmentUploading(false);
     }
   };
 
@@ -1150,6 +1210,58 @@ export default function ProjectsPage() {
                         placeholder="Add an assignment..."
                         className="w-full rounded-lg border border-emerald-300/40 bg-emerald-950/60 px-3 py-2 text-sm text-emerald-50 placeholder:text-emerald-50/60 focus:border-emerald-200/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
                       />
+                      <div
+                        className={`rounded-lg border border-dashed px-4 py-3 text-xs text-emerald-100/80 transition ${
+                          assignmentDropActive
+                            ? "border-emerald-200/70 bg-emerald-500/10"
+                            : "border-emerald-300/30 bg-emerald-950/40"
+                        }`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setAssignmentDropActive(true);
+                        }}
+                        onDragLeave={() => setAssignmentDropActive(false)}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          setAssignmentDropActive(false);
+                          const files = Array.from(event.dataTransfer.files || []);
+                          uploadDocuments(files);
+                        }}
+                      >
+                        <label className="flex flex-col gap-2">
+                          <span className="text-[0.65rem] uppercase tracking-[0.16em] text-emerald-100/70">
+                            Drag & drop documents here
+                          </span>
+                          <span>
+                            or{" "}
+                            <span className="text-emerald-100 underline">
+                              browse your computer
+                            </span>
+                          </span>
+                          <input
+                            type="file"
+                            multiple
+                            accept={acceptedTypes}
+                            className="hidden"
+                            onChange={(event) => {
+                              const files = Array.from(event.target.files || []);
+                              uploadDocuments(files);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <div className="mt-2 text-[0.65rem] text-emerald-100/60">
+                          Uploads go to Documents and auto-attach to this assignment.
+                        </div>
+                      </div>
+                      {assignmentUploadError && (
+                        <div className="rounded-md border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                          {assignmentUploadError}
+                        </div>
+                      )}
+                      {assignmentUploading && (
+                        <div className="text-xs text-emerald-100/70">Uploading...</div>
+                      )}
                       <div className="flex items-center justify-between gap-2">
                         <button
                           type="button"
