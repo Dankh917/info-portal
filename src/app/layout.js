@@ -29,10 +29,10 @@ export default function RootLayout({ children }) {
           <div className="app-shell">
             <header className="app-nav">
               <div className="app-nav__inner">
-                <div className="app-nav__brand">
+                <Link href="/" className="app-nav__brand">
                   <span className="app-nav__label">InfoPortal</span>
                   <span className="app-nav__title">Company Hub</span>
-                </div>
+                </Link>
                 <nav className="app-nav__links">
                   <Link href="/" className="app-nav__link">
                     Home
