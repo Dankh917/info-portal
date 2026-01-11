@@ -83,7 +83,7 @@ export default function UserMenu() {
           <div className="h-px bg-white/10" />
           {session?.user && (
             <a
-              href={session.user.username ? `/profile/${session.user.username}` : "/profile"}
+              href="/profile"
               className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >

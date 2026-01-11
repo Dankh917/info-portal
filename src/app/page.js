@@ -81,6 +81,7 @@ export default function Home() {
   const [favoriteProjects, setFavoriteProjects] = useState([]);
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState("");
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
 
   const quickLinks = [
     {
@@ -282,6 +283,7 @@ export default function Home() {
         departments: ["General"],
       });
       setNotice("Update posted successfully.");
+      setShowUpdateForm(false);
     } catch (err) {
       setError(err.message || "Unable to save update.");
     } finally {
@@ -382,13 +384,10 @@ export default function Home() {
       <ParticleBackground />
       <main className="relative z-10 mx-auto flex max-w-5xl flex-col gap-12 px-6 py-16">
         <header className="flex flex-col gap-3">
-          <p className="text-sm uppercase tracking-[0.28em] text-emerald-300/80">
-            InfoPortal
-          </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
-                Updates
+                Company Hub
               </h1>
               <span className="text-sm text-slate-300">
                 Stay aligned with the latest announcements.
@@ -399,17 +398,32 @@ export default function Home() {
 
         <ProjectSearch />
 
-        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+        <section
+          className={
+            showFavorites
+              ? "grid gap-6 lg:grid-cols-[1fr_1fr] lg:items-start"
+              : "grid gap-6"
+          }
+        >
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Latest updates</h2>
-              {loading ? (
-                <span className="text-xs text-slate-300">Loading...</span>
-              ) : (
-                <span className="text-xs text-slate-300">
-                  {updates.length} {updates.length === 1 ? "item" : "items"}
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {loading ? (
+                  <span className="text-xs text-slate-300">Loading...</span>
+                ) : (
+                  <span className="text-xs text-slate-300">
+                    {updates.length} {updates.length === 1 ? "item" : "items"}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowUpdateForm((prev) => !prev)}
+                  className="rounded-full border border-emerald-200/30 bg-emerald-950/50 px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-emerald-50 transition hover:border-emerald-200/60 hover:bg-emerald-900/70"
+                >
+                  {showUpdateForm ? "Close" : "Post update"}
+                </button>
+              </div>
             </div>
             {error && (
               <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
@@ -508,11 +522,131 @@ export default function Home() {
             )}
           </div>
 
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-900/40 p-6 shadow-xl shadow-emerald-500/20 backdrop-blur">
+          {showFavorites && (
+            <div className="rounded-2xl border border-amber-300/20 bg-amber-900/10 p-5 shadow-xl shadow-black/30 backdrop-blur">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-amber-50">Favorite projects</h2>
+                {favoritesLoading ? (
+                  <span className="text-xs text-amber-100/70">Loading...</span>
+                ) : (
+                  <span className="text-xs text-amber-100/70">
+                    {favoriteProjects.length} saved
+                  </span>
+                )}
+              </div>
+              {favoritesError && (
+                <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                  {favoritesError}
+                </div>
+              )}
+              {favoritesLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 2 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="animate-pulse rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                    >
+                      <div className="mb-2 h-3 w-28 rounded bg-white/20" />
+                      <div className="h-3 w-11/12 rounded bg-white/15" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {favoriteProjects.map((project) => {
+                    const assignment = userId
+                      ? (project.assignments || []).find((a) => a.userId === userId)
+                      : null;
+                    const instructions = Array.isArray(assignment?.instructions)
+                      ? assignment.instructions
+                      : [];
+                    return (
+                      <Link
+                        key={project._id}
+                        href={`/projects?id=${project._id}`}
+                        className="group rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 shadow-inner shadow-black/40 transition hover:-translate-y-[1px] hover:border-amber-300/40"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-white">{project.title}</h3>
+                          <span className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
+                            Open
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-300 line-clamp-2">
+                          {project.summary || "No summary"}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.65rem] uppercase tracking-[0.12em] text-slate-200">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-1 ${statusStyle(
+                              project.status,
+                            )}`}
+                          >
+                            {formatStatus(project.status)}
+                          </span>
+                          {project.dueDate && (
+                            <span className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-2 py-1 text-slate-200">
+                              Due {formatDate(project.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                        {Array.isArray(project.departments) && project.departments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {project.departments.slice(0, 2).map((dept) => (
+                              <span
+                                key={dept}
+                                className="inline-flex items-center rounded-full border border-white/10 bg-slate-800/60 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-slate-100"
+                              >
+                                {dept}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {assignment && (
+                          <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2 text-xs text-white">
+                              <span>{assignment.name || assignment.email || "You"}</span>
+                              <span className="text-[0.7rem] text-emerald-100">
+                                {(assignment.departments || []).join(", ") || "No dept"}
+                              </span>
+                            </div>
+                            {instructions.length > 0 && (
+                              <ul className="mt-2 space-y-1 text-xs text-emerald-50/90">
+                                {instructions.map((ins) => {
+                                  const insKey = ins._id || ins.id || ins.text;
+                                  return (
+                                    <li
+                                      key={insKey}
+                                      className="flex items-start justify-between gap-3 rounded bg-emerald-500/10 px-2 py-1"
+                                    >
+                                      <div
+                                        className={
+                                          ins.done ? "line-through text-emerald-200/70" : ""
+                                        }
+                                      >
+                                        {ins.text}
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {showUpdateForm && (
+          <section className="rounded-2xl border border-emerald-400/30 bg-emerald-900/40 p-6 shadow-xl shadow-emerald-500/20 backdrop-blur">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-emerald-50">
-                  Post new update
+                  Create an update
                 </h2>
                 <p className="text-sm text-emerald-50/80">
                   Share news, alerts, or announcements with everyone.
@@ -605,7 +739,7 @@ export default function Home() {
                             }`}
                           >
                             <span className="text-[0.78rem]">{dept.name}</span>
-                            {selected && <span className="text-[0.7rem] text-white/90">V</span>}
+                            {selected && <span className="text-[0.7rem] text-white/90">✓</span>}
                           </button>
                         );
                       })}
@@ -656,7 +790,7 @@ export default function Home() {
                             <span className="text-sm">{tag.icon || "???"}</span>
                             <span className="text-[0.78rem]">{tag.name}</span>
                             {selected && (
-                              <span className="text-[0.7rem] text-white/90">?</span>
+                              <span className="text-[0.7rem] text-white/90">✓</span>
                             )}
                           </button>
                         );
@@ -678,124 +812,6 @@ export default function Home() {
                 {posting ? "Posting..." : "Post New Update"}
               </button>
             </form>
-          </div>
-        </section>
-
-        {showFavorites && (
-          <section className="rounded-2xl border border-amber-300/20 bg-amber-900/10 p-5 shadow-xl shadow-black/30 backdrop-blur">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-amber-50">Favorite projects</h2>
-              {favoritesLoading ? (
-                <span className="text-xs text-amber-100/70">Loading...</span>
-              ) : (
-                <span className="text-xs text-amber-100/70">
-                  {favoriteProjects.length} saved
-                </span>
-              )}
-            </div>
-            {favoritesError && (
-              <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                {favoritesError}
-              </div>
-            )}
-            {favoritesLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 2 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="animate-pulse rounded-xl border border-white/10 bg-white/5 px-4 py-3"
-                  >
-                    <div className="mb-2 h-3 w-28 rounded bg-white/20" />
-                    <div className="h-3 w-11/12 rounded bg-white/15" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {favoriteProjects.map((project) => {
-                  const assignment = userId
-                    ? (project.assignments || []).find((a) => a.userId === userId)
-                    : null;
-                  const instructions = Array.isArray(assignment?.instructions)
-                    ? assignment.instructions
-                    : [];
-                  return (
-                    <Link
-                      key={project._id}
-                      href={`/projects?id=${project._id}`}
-                      className="group rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 shadow-inner shadow-black/40 transition hover:-translate-y-[1px] hover:border-amber-300/40"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <h3 className="text-sm font-semibold text-white">{project.title}</h3>
-                        <span className="text-xs uppercase tracking-[0.2em] text-amber-200/80">
-                          Open
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-300 line-clamp-2">
-                        {project.summary || "No summary"}
-                      </p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.65rem] uppercase tracking-[0.12em] text-slate-200">
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-1 ${statusStyle(
-                            project.status,
-                          )}`}
-                        >
-                          {formatStatus(project.status)}
-                        </span>
-                        {project.dueDate && (
-                          <span className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-2 py-1 text-slate-200">
-                            Due {formatDate(project.dueDate)}
-                          </span>
-                        )}
-                      </div>
-                      {Array.isArray(project.departments) && project.departments.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {project.departments.slice(0, 2).map((dept) => (
-                            <span
-                              key={dept}
-                              className="inline-flex items-center rounded-full border border-white/10 bg-slate-800/60 px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-slate-100"
-                            >
-                              {dept}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {assignment && (
-                        <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                          <div className="flex items-center justify-between gap-2 text-xs text-white">
-                            <span>{assignment.name || assignment.email || "You"}</span>
-                            <span className="text-[0.7rem] text-emerald-100">
-                              {(assignment.departments || []).join(", ") || "No dept"}
-                            </span>
-                          </div>
-                          {instructions.length > 0 && (
-                            <ul className="mt-2 space-y-1 text-xs text-emerald-50/90">
-                              {instructions.map((ins) => {
-                                const insKey = ins._id || ins.id || ins.text;
-                                return (
-                                  <li
-                                    key={insKey}
-                                    className="flex items-start justify-between gap-3 rounded bg-emerald-500/10 px-2 py-1"
-                                  >
-                                    <div
-                                      className={
-                                        ins.done ? "line-through text-emerald-200/70" : ""
-                                      }
-                                    >
-                                      {ins.text}
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </div>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
           </section>
         )}
 

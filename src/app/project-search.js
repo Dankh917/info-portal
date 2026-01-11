@@ -13,6 +13,25 @@ const formatDate = (value) => {
   }
 };
 
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const highlightMatch = (text, query) => {
+  if (!text || !query) return text;
+  const safeQuery = escapeRegExp(query.trim());
+  if (!safeQuery) return text;
+  const regex = new RegExp(`(${safeQuery})`, "gi");
+  const parts = String(text).split(regex);
+  return parts.map((part, index) =>
+    regex.test(part) ? (
+      <span key={`${part}-${index}`} className="text-emerald-300">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+};
+
 // Custom debounce hook for search optimization
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -190,8 +209,20 @@ export default function ProjectSearch() {
             project.tags.some((tag) => (tag || "").toLowerCase().includes(query));
           const deptsMatch = Array.isArray(project.departments) &&
             project.departments.some((dept) => (dept || "").toLowerCase().includes(query));
+          const assignments = Array.isArray(project.assignments) ? project.assignments : [];
+          const isAdmin = session?.user?.role === "admin";
+          const instructions = isAdmin
+            ? assignments.flatMap((item) =>
+                Array.isArray(item?.instructions) ? item.instructions : [],
+              )
+            : session?.user?.id
+              ? (assignments.find((item) => item.userId === session.user.id)?.instructions || [])
+              : [];
+          const instructionMatch = instructions.some((ins) =>
+            (ins?.text || "").toLowerCase().includes(query),
+          );
 
-          return titleMatch || summaryMatch || tagsMatch || deptsMatch;
+          return titleMatch || summaryMatch || tagsMatch || deptsMatch || instructionMatch;
         } catch (err) {
           console.error("[ProjectSearch] Error filtering individual project:", {
             projectId: project._id,
@@ -211,7 +242,7 @@ export default function ProjectSearch() {
       });
       return [];
     }
-  }, [debouncedSearchQuery, projects]);
+  }, [debouncedSearchQuery, projects, session?.user?.id, session?.user?.role]);
 
   const filteredUpdates = useMemo(() => {
     if (!debouncedSearchQuery.trim()) {
@@ -294,12 +325,8 @@ export default function ProjectSearch() {
       const query = debouncedSearchQuery.toLowerCase();
       const filtered = users.filter((user) => {
         try {
-          const usernameMatch = (user.username || "").toLowerCase().includes(query);
-          const nameMatch = (user.name || "").toLowerCase().includes(query);
           const emailMatch = (user.email || "").toLowerCase().includes(query);
-          const bioMatch = (user.bio || "").toLowerCase().includes(query);
-
-          return usernameMatch || nameMatch || emailMatch || bioMatch;
+          return emailMatch;
         } catch (err) {
           return false;
         }
@@ -324,7 +351,7 @@ export default function ProjectSearch() {
   }
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/30 backdrop-blur">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
@@ -347,7 +374,7 @@ export default function ProjectSearch() {
             placeholder="Search projects, updates, documents, and users..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-3 pr-24 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
+            className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 pr-24 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
           />
           {isSearching && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -405,7 +432,13 @@ export default function ProjectSearch() {
               {filteredUsers.map((user) => (
                 <Link
                   key={user._id}
-                  href={user.username ? `/profile/${encodeURIComponent(user.username)}` : `/profile`}
+                  href={
+                    user.email
+                      ? `/profile/${encodeURIComponent(user.email)}`
+                      : user.username
+                        ? `/profile/${encodeURIComponent(user.username)}`
+                        : `/profile`
+                  }
                   className="group block rounded-lg border border-white/10 bg-slate-900/70 p-4 shadow-inner hover:border-emerald-400/30 transition"
                 >
                   <div className="flex items-center gap-3">
@@ -416,11 +449,19 @@ export default function ProjectSearch() {
                     />
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
-                        {user.name || user.email || "User"}
+                        {highlightMatch(
+                          user.name || user.email || "User",
+                          debouncedSearchQuery,
+                        )}
                       </h4>
                       <p className="text-xs text-slate-400 line-clamp-1">
                         @{user.username || "user"}
                       </p>
+                      {user.email && (
+                        <p className="text-xs text-slate-500 line-clamp-1">
+                          {highlightMatch(user.email, debouncedSearchQuery)}
+                        </p>
+                      )}
                       {user.bio && (
                         <p className="text-xs text-slate-500 line-clamp-1 mt-1">
                           {user.bio}
@@ -459,10 +500,10 @@ export default function ProjectSearch() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-white line-clamp-1">
-                        {update.title}
+                        {highlightMatch(update.title, debouncedSearchQuery)}
                       </h4>
                       <p className="text-xs text-slate-400 line-clamp-2 mt-1">
-                        {update.message}
+                        {highlightMatch(update.message, debouncedSearchQuery)}
                       </p>
                     </div>
                     <span className="text-xs text-slate-500 whitespace-nowrap">
@@ -503,7 +544,7 @@ export default function ProjectSearch() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
-                        {document.title}
+                        {highlightMatch(document.title, debouncedSearchQuery)}
                       </h4>
                       <p className="text-xs text-slate-400 line-clamp-1 mt-1">
                         {document.originalName}
@@ -551,6 +592,21 @@ export default function ProjectSearch() {
                 const favoriteLabel = isFavorite ? "Unfavorite project" : "Favorite project";
                 const favoriteTitle =
                   disableFavorite && !isFavorite ? "Favorite limit reached" : favoriteLabel;
+                const query = debouncedSearchQuery.trim().toLowerCase();
+                const assignments = Array.isArray(project.assignments) ? project.assignments : [];
+                const isAdmin = session?.user?.role === "admin";
+                const instructions = isAdmin
+                  ? assignments.flatMap((item) =>
+                      Array.isArray(item?.instructions) ? item.instructions : [],
+                    )
+                  : session?.user?.id
+                    ? (assignments.find((item) => item.userId === session.user.id)?.instructions || [])
+                    : [];
+                const matchedInstructions = query
+                  ? instructions.filter((ins) =>
+                      (ins?.text || "").toLowerCase().includes(query),
+                    )
+                  : [];
                 return (
                   <Link
                     key={project._id}
@@ -560,7 +616,7 @@ export default function ProjectSearch() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-white group-hover:text-emerald-100 transition line-clamp-1">
-                          {project.title}
+                          {highlightMatch(project.title, debouncedSearchQuery)}
                         </h3>
                         <p className="text-xs text-slate-400 line-clamp-1 mt-1">
                           {project.summary || "No summary"}
@@ -609,6 +665,11 @@ export default function ProjectSearch() {
                           Favorite
                         </span>
                       )}
+                      {matchedInstructions.length > 0 && (
+                        <span className="inline-flex items-center rounded-full border border-emerald-200/30 bg-emerald-900/60 px-2 py-1 text-[0.65rem] font-semibold uppercase text-emerald-100">
+                          Tasks: {matchedInstructions.length}
+                        </span>
+                      )}
                       {Array.isArray(project.departments) &&
                         project.departments.map((dept) => (
                           <span
@@ -633,16 +694,34 @@ export default function ProjectSearch() {
                         </span>
                       )}
                     </div>
+                    {matchedInstructions.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-emerald-200/20 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-50/90">
+                        <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-emerald-200/80">
+                          Matching tasks
+                        </div>
+                        <ul className="mt-2 space-y-1">
+                          {matchedInstructions.slice(0, 3).map((ins) => {
+                            const insKey = ins._id || ins.id || ins.text;
+                            return (
+                              <li
+                                key={insKey}
+                                className="flex items-start gap-2 rounded bg-emerald-500/10 px-2 py-1"
+                              >
+                                <span className="text-emerald-200/80">•</span>
+                                <span className={ins.done ? "line-through text-emerald-200/70" : ""}>
+                                  {ins.text}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
                   </Link>
                 );
               })}
             </div>
           )}
-        </div>
-      ) : !searchQuery.trim() && !loading ? (
-        <div className="rounded-lg border border-dashed border-white/10 bg-white/5 px-5 py-8 text-center text-slate-300">
-          <p className="text-sm">Start typing to search</p>
-          <p className="text-xs text-slate-400 mt-1">Search across projects, updates, documents, and users</p>
         </div>
       ) : null}
     </section>

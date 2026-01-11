@@ -141,8 +141,23 @@ export async function buildProfilePayload(targetKey, viewerId, viewerRole) {
   const maybeId = toObjectId(targetValue);
   const lower = targetValue.toLowerCase();
   const query = maybeId
-    ? { $or: [{ _id: maybeId }, { normalizedUsername: lower }, { username: targetValue }] }
-    : { $or: [{ normalizedUsername: lower }, { username: targetValue }] };
+    ? {
+        $or: [
+          { _id: maybeId },
+          { normalizedUsername: lower },
+          { username: targetValue },
+          { email: targetValue },
+          { email: lower },
+        ],
+      }
+    : {
+        $or: [
+          { normalizedUsername: lower },
+          { username: targetValue },
+          { email: targetValue },
+          { email: lower },
+        ],
+      };
 
   const target = await usersCollection.findOne(query, {
     projection: userProjection,
