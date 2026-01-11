@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ProjectSearch from "./project-search";
 import ParticleBackground from "./particle-background";
@@ -82,6 +82,7 @@ export default function Home() {
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState("");
   const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const updateFormRef = useRef(null);
 
   const quickLinks = [
     {
@@ -221,6 +222,14 @@ export default function Home() {
 
     loadFavorites();
   }, [session?.user]);
+
+  useEffect(() => {
+    if (!showUpdateForm || !updateFormRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      updateFormRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showUpdateForm]);
 
 
   const toggleTag = (tagName) => {
@@ -642,7 +651,10 @@ export default function Home() {
         </section>
 
         {showUpdateForm && (
-          <section className="rounded-2xl border border-emerald-400/30 bg-emerald-900/40 p-6 shadow-xl shadow-emerald-500/20 backdrop-blur">
+          <section
+            ref={updateFormRef}
+            className="rounded-2xl border border-emerald-400/30 bg-emerald-900/40 p-6 shadow-xl shadow-emerald-500/20 backdrop-blur"
+          >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-emerald-50">
