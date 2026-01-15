@@ -139,14 +139,171 @@
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.3);
   color: #e0f2fe;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+
+.eventTitle {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.eventTime {
+  display: block;
+  font-size: 0.7rem;
+  color: rgba(226, 232, 240, 0.85);
+}
+
+.tooltip {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 0.15rem;
+  min-width: 220px;
+  max-width: 320px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #e2e8f0;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+}
+
+.tooltip a {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.eventItem:hover .tooltip,
+.weekEvent:hover .tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .moreEvents {
   font-size: 0.7rem;
   color: #94a3b8;
+}
+
+.weekWrapper {
+  margin-top: 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 1rem;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.weekHeader {
+  display: grid;
+  grid-template-columns: 80px repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.timeHeader {
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.weekdayHeader {
+  padding: 0.75rem 0.5rem;
+  display: grid;
+  gap: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  border-right: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.weekdayHeader strong {
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  color: #e2e8f0;
+}
+
+.weekBody {
+  display: grid;
+  grid-template-columns: 80px repeat(7, minmax(0, 1fr));
+  position: relative;
+}
+
+.timeColumn {
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.timeSlot {
+  height: 64px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  display: flex;
+  align-items: flex-start;
+}
+
+.dayColumn {
+  position: relative;
+  border-right: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.dayColumn:last-child {
+  border-right: none;
+}
+
+.hourBlock {
+  height: 64px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.weekEvent {
+  position: absolute;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.6rem;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #e0f2fe;
+  font-size: 0.75rem;
+  overflow: visible;
+  z-index: 2;
+}
+
+.eventItem:hover,
+.weekEvent:hover {
+  z-index: 10;
+}
+
+.nowLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #38bdf8;
+  z-index: 3;
+}
+
+.nowDot {
+  position: absolute;
+  left: 6px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
 }
 
 @media (max-width: 900px) {
@@ -160,5 +317,14 @@
 
   .dayCell {
     min-height: 100px;
+  }
+
+  .weekWrapper {
+    overflow-x: auto;
+  }
+
+  .weekHeader,
+  .weekBody {
+    min-width: 720px;
   }
 }
