@@ -43,6 +43,9 @@ export default function RootLayout({ children }) {
                   <Link href="/projects" className="app-nav__link">
                     Projects
                   </Link>
+                  <Link href="/calendar" className="app-nav__link">
+                    Calendar
+                  </Link>
                 </nav>
               </div>
             </header>

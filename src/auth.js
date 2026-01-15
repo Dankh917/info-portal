@@ -12,9 +12,13 @@ export const authOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
-          prompt: "select_account",
+          prompt: "consent select_account",
+          access_type: "offline",
+          scope:
+            "openid email profile https://www.googleapis.com/auth/calendar.readonly",
         },
       },
     }),
