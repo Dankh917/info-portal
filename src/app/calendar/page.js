@@ -251,6 +251,7 @@ export default function CalendarPage() {
 
   return (
     <div className={styles.shell}>
+      <ParticleBackground />
       <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Google Calendar</p>

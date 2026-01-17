@@ -27,6 +27,51 @@ const toObjectId = (value) => {
   }
 };
 
+// Helper to check if user has access to a document based on hierarchy
+const hasAccessToDocument = (doc, userToken) => {
+  // User always has access to their own private documents
+  if (doc.isPrivate && doc.uploadedBy === userToken.sub) {
+    return true;
+  }
+
+  // Don't show other users' private documents
+  if (doc.isPrivate) {
+    return false;
+  }
+
+  // Check hierarchy level access
+  const docLevel = doc.hierarchyLevel ?? 3; // Default to level 3 (everyone)
+  const userRole = userToken.role?.toLowerCase() || "general";
+
+  // Level 0: Only admins
+  if (docLevel === 0) {
+    return userRole === "admin";
+  }
+
+  // Level 1: Admins and PR managers
+  if (docLevel === 1) {
+    return userRole === "admin" || userRole === "pr_manager";
+  }
+
+  // Level 2: Same role access (general, operations, etc.)
+  if (docLevel === 2) {
+    // User can see level 2 docs that match their department/role
+    if (doc.accessRoles && Array.isArray(doc.accessRoles) && doc.accessRoles.length > 0) {
+      const userDepartments = userToken.departments || [];
+      // Check if user has any matching department (excluding admin)
+      const hasMatchingDept = userDepartments.some(dept => 
+        doc.accessRoles.includes(dept) && dept.toLowerCase() !== "admin"
+      );
+      return hasMatchingDept || userRole === "admin";
+    }
+    // If no specific roles set, allow non-general users
+    return userRole !== "general" || userRole === "admin";
+  }
+
+  // Level 3: Everyone can access
+  return true;
+};
+
 export async function GET(request) {
   try {
     const token = await getToken({
@@ -38,10 +83,13 @@ export async function GET(request) {
     }
 
     const collection = await getDocumentsCollection();
-    const documents = await collection
+    const allDocuments = await collection
       .find({}, { projection: { file: 0 } })
       .sort({ createdAt: -1 })
       .toArray();
+
+    // Filter documents based on user access
+    const documents = allDocuments.filter(doc => hasAccessToDocument(doc, token));
 
     const uploaderIds = documents
       .map((doc) => toObjectId(doc.uploadedBy))
@@ -111,11 +159,32 @@ export async function POST(request) {
     const formData = await request.formData();
     const file = formData.get("file");
     const title = formData.get("title");
+    const hierarchyLevel = parseInt(formData.get("hierarchyLevel") || "3", 10);
+    const isPrivate = formData.get("isPrivate") === "true";
+    const accessRoles = formData.get("accessRoles");
+    const projectId = formData.get("projectId");
 
     if (!file || typeof file.arrayBuffer !== "function") {
       return NextResponse.json(
         { error: "Please attach a file to upload." },
         { status: 400 }
+      );
+    }
+
+    // Only admins can set hierarchy level 0
+    const userRole = token.role?.toLowerCase() || "general";
+    if (hierarchyLevel === 0 && userRole !== "admin") {
+      return NextResponse.json(
+        { error: "Only admins can upload to level 0." },
+        { status: 403 }
+      );
+    }
+
+    // Only admins and PR managers can set hierarchy level 1
+    if (hierarchyLevel === 1 && userRole !== "admin" && userRole !== "pr_manager") {
+      return NextResponse.json(
+        { error: "Only admins and PR managers can upload to level 1." },
+        { status: 403 }
       );
     }
 
@@ -129,6 +198,10 @@ export async function POST(request) {
       uploadedByEmail: token.email,
       uploadedByUsername: token.username || deriveUsername(token.email || token.name || token.sub),
       createdAt: new Date(),
+      hierarchyLevel: isPrivate ? null : hierarchyLevel,
+      isPrivate: isPrivate,
+      accessRoles: accessRoles ? accessRoles.split(",").map(r => r.trim()) : [],
+      projectId: projectId || null,
       file: buffer,
     };
 

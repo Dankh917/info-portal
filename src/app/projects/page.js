@@ -764,6 +764,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+      <ParticleBackground />
       <main className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-14">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>

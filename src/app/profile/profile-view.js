@@ -40,6 +40,8 @@ export default function ProfileView({ username = "" }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [friendLoading, setFriendLoading] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
   const isSelf = profile?.isSelf;
 
   const loadProfile = async () => {
@@ -64,6 +66,33 @@ export default function ProfileView({ username = "" }) {
     loadProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
+
+  const loadUserDocuments = async () => {
+    if (!profile?.username) return;
+    setDocsLoading(true);
+    try {
+      const res = await fetch("/api/documents", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) {
+        // Filter documents by this user
+        const userDocs = (data.documents || []).filter(
+          doc => !doc.isPrivate && doc.uploadedByUsername === profile.username
+        );
+        setDocuments(userDocs);
+      }
+    } catch (err) {
+      console.error("Failed to load documents:", err);
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profile?.username) {
+      loadUserDocuments();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.username]);
 
   const handleFriendAction = async (action, targetId) => {
     setFriendLoading(true);
@@ -140,6 +169,7 @@ export default function ProfileView({ username = "" }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-6 py-16 text-slate-100">
+      <ParticleBackground />
       <div className="mx-auto flex max-w-5xl flex-col gap-8">
         <header className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-900/70 p-6 shadow-lg">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -358,6 +388,79 @@ export default function ProfileView({ username = "" }) {
                 </Link>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* Documents Uploaded Section */}
+        {documents.length > 0 && (
+          <section className="space-y-3 rounded-2xl border border-white/10 bg-slate-900/70 p-6 shadow-lg">
+            <h2 className="text-lg font-semibold text-white">
+              📄 Documents Uploaded {isSelf ? "by You" : `by ${profile?.name?.split(' ')[0] || 'User'}`}
+            </h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-white/10">
+                  <tr className="text-slate-400">
+                    <th className="pb-3 font-semibold">Document</th>
+                    <th className="pb-3 font-semibold">Type</th>
+                    <th className="pb-3 font-semibold">Size</th>
+                    <th className="pb-3 font-semibold">Uploaded</th>
+                    <th className="pb-3 font-semibold">Access</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {documents.map((doc) => {
+                    const ext = (doc.title || doc.originalName || '')
+                      .match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || 'file';
+                    const size = doc.size
+                      ? `${(doc.size / 1024).toFixed(doc.size >= 10240 ? 0 : 1)} KB`
+                      : '-';
+                    const level = doc.hierarchyLevel ?? 3;
+                    let accessLabel = '';
+                    if (level === 0) {
+                      accessLabel = '🔐 Admin';
+                    } else if (level === 1) {
+                      accessLabel = '👔 Managers';
+                    } else if (level === 2) {
+                      const roles = doc.accessRoles && doc.accessRoles.length > 0 
+                        ? doc.accessRoles.join(', ')
+                        : 'Same Role';
+                      accessLabel = `👥 ${roles}`;
+                    } else {
+                      accessLabel = '🌐 Public';
+                    }
+                    
+                    return (
+                      <tr key={doc._id} className="group hover:bg-white/5">
+                        <td className="py-3">
+                          <Link 
+                            href={`/documentation?highlight=${doc._id}`}
+                            className="text-white hover:text-emerald-300 hover:underline"
+                          >
+                            {doc.title || doc.originalName}
+                          </Link>
+                        </td>
+                        <td className="py-3">
+                          <span className="inline-block rounded bg-slate-700/50 px-2 py-1 text-xs font-semibold uppercase text-slate-300">
+                            {ext}
+                          </span>
+                        </td>
+                        <td className="py-3 text-slate-300">{size}</td>
+                        <td className="py-3 text-slate-300">
+                          {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="py-3">
+                          <span className="text-xs text-slate-400">{accessLabel}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {docsLoading && (
+              <p className="text-center text-sm text-slate-400">Loading documents...</p>
+            )}
           </section>
         )}
       </div>
