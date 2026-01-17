@@ -82,13 +82,22 @@ export default function UserMenu() {
           </div>
           <div className="h-px bg-white/10" />
           {session?.user && (
-            <a
-              href="/profile"
-              className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
-              role="menuitem"
-            >
-              My profile
-            </a>
+            <>
+              <a
+                href="/profile"
+                className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
+                role="menuitem"
+              >
+                My profile
+              </a>
+              <a
+                href="/directory"
+                className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
+                role="menuitem"
+              >
+                Employee directory
+              </a>
+            </>
           )}
           {session?.user?.role === "admin" && (
             <a
