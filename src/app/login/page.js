@@ -2,7 +2,7 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useEffect } from "react";
-import ParticleBackground from "./particle-background";
+import ParticleBackground from "../particle-background";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
