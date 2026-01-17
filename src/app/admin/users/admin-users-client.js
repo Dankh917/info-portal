@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ParticleBackground from "../../particle-background";
 
 const ROLE_OPTIONS = ["general", "pm", "admin"];
 
@@ -137,7 +138,8 @@ export default function AdminUsersClient() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <main className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-16">
+      <ParticleBackground />
+      <main className="relative z-10 mx-auto flex max-w-5xl flex-col gap-8 px-6 py-16">
         <header className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-[0.35em] text-emerald-300/80">
             Admin

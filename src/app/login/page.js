@@ -2,6 +2,7 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useEffect } from "react";
+import ParticleBackground from "./particle-background";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
@@ -16,7 +17,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-6 py-16 text-center">
+      <ParticleBackground />
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-6 py-16 text-center">
         <p className="text-xs uppercase tracking-[0.35em] text-emerald-300/80">
           InfoPortal
         </p>
