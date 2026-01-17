@@ -53,6 +53,12 @@ const formatStatus = (status) => {
 };
 
 export default function Home() {
+  // Get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
   const { data: session } = useSession();
   const userId = session?.user?.id;
   const [updates, setUpdates] = useState([]);
@@ -61,7 +67,7 @@ export default function Home() {
   const [form, setForm] = useState({
     title: "",
     message: "",
-    happensAtDate: "",
+    happensAtDate: getTodayDate(),
     happensAtTime: "",
     tags: [],
     departments: ["General"],
@@ -258,9 +264,14 @@ export default function Home() {
     setError("");
     setNotice("");
 
-    const happensAt = form.happensAtDate
-      ? `${form.happensAtDate}T${form.happensAtTime || "00:00"}`
-      : null;
+    // Make date required
+    if (!form.happensAtDate) {
+      setError("Upload date is required.");
+      setPosting(false);
+      return;
+    }
+
+    const happensAt = `${form.happensAtDate}T${form.happensAtTime || "00:00"}`;
 
     try {
       const res = await fetch("/api/updates", {
@@ -286,7 +297,7 @@ export default function Home() {
       setForm({
         title: "",
         message: "",
-        happensAtDate: "",
+        happensAtDate: getTodayDate(),
         happensAtTime: "",
         tags: [],
         departments: ["General"],
@@ -425,6 +436,12 @@ export default function Home() {
                     {updates.length} {updates.length === 1 ? "item" : "items"}
                   </span>
                 )}
+                <Link
+                  href="/archivedupdates"
+                  className="rounded-full border border-slate-200/30 bg-slate-950/50 px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-slate-50 transition hover:border-slate-200/60 hover:bg-slate-900/70"
+                >
+                  Archive
+                </Link>
                 <button
                   type="button"
                   onClick={() => setShowUpdateForm((prev) => !prev)}
@@ -693,9 +710,15 @@ export default function Home() {
               </label>
               <div className="grid gap-4 sm:grid-cols-[1.15fr_0.85fr]">
                 <label className="flex flex-col gap-2 text-sm font-medium text-emerald-50/90">
-                  Event date (optional)
+                  <div className="flex items-center justify-between">
+                    <span>Upload date</span>
+                    <span className="text-xs uppercase tracking-[0.16em] text-emerald-100/80">
+                      Required
+                    </span>
+                  </div>
                   <input
                     type="date"
+                    required
                     value={form.happensAtDate}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, happensAtDate: e.target.value }))

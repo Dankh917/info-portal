@@ -67,7 +67,10 @@ export async function GET(request) {
     }
 
     const updates = await collection
-      .find({ $or: filters })
+      .find({ 
+        $or: filters,
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      })
       .sort({ createdAt: -1 })
       .toArray();
 
