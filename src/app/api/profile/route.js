@@ -60,11 +60,13 @@ export async function PATCH(request) {
     const formData = await request.formData();
     const name = cleanString(formData.get("name"), 90) || null;
     const bio = cleanString(formData.get("bio"), 600);
+    const phone = cleanString(formData.get("phone"), 20) || null;
     const file = formData.get("picture");
 
     const update = {};
     if (name) update.name = name;
     update.bio = bio || "";
+    if (phone) update.phone = phone;
 
     let newAvatarPath = null;
     let oldAvatarPath = null;
@@ -93,6 +95,27 @@ export async function PATCH(request) {
 
     const client = await clientPromise;
     const usersCollection = client.db(dbName).collection("users");
+
+    // Validate name uniqueness
+    if (name) {
+      const existingWithName = await usersCollection.findOne(
+        { name: name, _id: { $ne: new ObjectId(token.sub) } }
+      );
+      if (existingWithName) {
+        return NextResponse.json(
+          { error: "This name is already taken. Please choose a different name." },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Validate phone format (exactly 10 digits)
+    if (phone && phone.replace(/\D/g, "").length !== 10) {
+      return NextResponse.json(
+        { error: "Phone must be exactly 10 digits." },
+        { status: 400 }
+      );
+    }
 
     const userRecord = await usersCollection.findOne(new ObjectId(token.sub), {
       projection: { profileImage: 1 },

@@ -24,12 +24,9 @@ export default function UserMenu() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      console.log("[UserMenu] User authenticated", {
-        email: session?.user?.email,
-        role: session?.user?.role,
-      });
+      // User authenticated - debug info removed
     } else if (status === "unauthenticated") {
-      console.log("[UserMenu] User unauthenticated");
+      // User unauthenticated - debug info removed
     }
   }, [status, session?.user?.email, session?.user?.role]);
 
@@ -112,7 +109,6 @@ export default function UserMenu() {
             <button
               type="button"
               onClick={() => {
-                console.log("[UserMenu] Signing out user", { email: session.user.email });
                 signOut({ callbackUrl: "/login" });
               }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
@@ -124,7 +120,6 @@ export default function UserMenu() {
             <button
               type="button"
               onClick={() => {
-                console.log("[UserMenu] Initiating Google sign in");
                 signIn("google", { callbackUrl: "/", prompt: "select_account" });
               }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"

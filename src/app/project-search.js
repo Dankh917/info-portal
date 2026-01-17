@@ -69,8 +69,6 @@ export default function ProjectSearch() {
       setError("");
 
       try {
-        console.log("[ProjectSearch] Starting data load for user:", session?.user?.email);
-        
         // Load projects, updates, documents, and users in parallel
         const [projectsRes, updatesRes, documentsRes, usersRes] = await Promise.all([
           fetch("/api/projects", { cache: "no-store" }),
@@ -86,56 +84,39 @@ export default function ProjectSearch() {
 
         if (!projectsRes.ok) {
           const errorMsg = projectsData?.error || "Unable to load projects.";
-          console.error("[ProjectSearch] Failed to load projects:", {
+          logClientError("[ProjectSearch] Failed to load projects", errorMsg, {
             status: projectsRes.status,
             statusText: projectsRes.statusText,
-            error: errorMsg,
-            responseData: projectsData,
           });
           throw new Error(errorMsg);
         }
 
         if (!updatesRes.ok) {
           const errorMsg = updatesData?.error || "Unable to load updates.";
-          console.error("[ProjectSearch] Failed to load updates:", {
+          logClientError("[ProjectSearch] Failed to load updates", errorMsg, {
             status: updatesRes.status,
             statusText: updatesRes.statusText,
-            error: errorMsg,
-            responseData: updatesData,
           });
           throw new Error(errorMsg);
         }
 
         if (!documentsRes.ok) {
           const errorMsg = documentsData?.error || "Unable to load documents.";
-          console.error("[ProjectSearch] Failed to load documents:", {
+          logClientError("[ProjectSearch] Failed to load documents", errorMsg, {
             status: documentsRes.status,
             statusText: documentsRes.statusText,
-            error: errorMsg,
-            responseData: documentsData,
           });
           throw new Error(errorMsg);
         }
 
         if (!usersRes.ok) {
-          console.error("[ProjectSearch] Failed to load users:", {
-            status: usersRes.status,
-            statusText: usersRes.statusText,
-            error: usersData?.error || "Unable to load users.",
-          });
+          logClientError("[ProjectSearch] Failed to load users", usersData?.error || "Unable to load users.");
           // Don't throw error for users, just set empty array
           setUsers([]);
         } else {
           setUsers(usersData.users ?? []);
         }
 
-        console.log("[ProjectSearch] Successfully loaded data:", {
-          projectsCount: projectsData.projects?.length || 0,
-          updatesCount: updatesData.updates?.length || 0,
-          documentsCount: documentsData.documents?.length || 0,
-          usersCount: usersData.users?.length || 0,
-          userEmail: session?.user?.email,
-        });
         setFavoriteIds(
           Array.isArray(projectsData.favoriteProjectIds)
             ? projectsData.favoriteProjectIds
@@ -146,12 +127,7 @@ export default function ProjectSearch() {
         setDocuments(documentsData.documents ?? []);
       } catch (err) {
         const errorMsg = err.message || "Unable to load data.";
-        console.error("[ProjectSearch] Error loading data:", {
-          error: errorMsg,
-          errorName: err.name,
-          stack: err.stack,
-          userEmail: session?.user?.email,
-        });
+        logClientError("[ProjectSearch] Error loading data", errorMsg);
         setError(errorMsg);
         setProjects([]);
         setUpdates([]);
@@ -166,7 +142,6 @@ export default function ProjectSearch() {
     if (session?.user) {
       loadData();
     } else {
-      console.log("[ProjectSearch] No user session available, skipping data load");
     }
   }, [session?.user]);
 
@@ -199,7 +174,6 @@ export default function ProjectSearch() {
     }
 
     try {
-      console.log("[ProjectSearch] Filtering projects for query:", debouncedSearchQuery);
       const query = debouncedSearchQuery.toLowerCase();
       const filtered = projects.filter((project) => {
         try {
@@ -224,22 +198,14 @@ export default function ProjectSearch() {
 
           return titleMatch || summaryMatch || tagsMatch || deptsMatch || instructionMatch;
         } catch (err) {
-          console.error("[ProjectSearch] Error filtering individual project:", {
-            projectId: project._id,
-            error: err.message,
-          });
+          logClientError("[ProjectSearch] Error filtering individual project", err);
           return false;
         }
       });
 
-      console.log("[ProjectSearch] Filtered projects:", { query: debouncedSearchQuery, count: filtered.length });
       return filtered;
     } catch (err) {
-      console.error("[ProjectSearch] Error in project filtering:", {
-        query: debouncedSearchQuery,
-        error: err.message,
-        stack: err.stack,
-      });
+      logClientError("[ProjectSearch] Error in project filtering", err);
       return [];
     }
   }, [debouncedSearchQuery, projects, session?.user?.id, session?.user?.role]);
@@ -250,7 +216,6 @@ export default function ProjectSearch() {
     }
 
     try {
-      console.log("[ProjectSearch] Filtering updates for query:", debouncedSearchQuery);
       const query = debouncedSearchQuery.toLowerCase();
       const filtered = updates.filter((update) => {
         try {
@@ -259,22 +224,14 @@ export default function ProjectSearch() {
 
           return titleMatch || messageMatch;
         } catch (err) {
-          console.error("[ProjectSearch] Error filtering individual update:", {
-            updateId: update._id,
-            error: err.message,
-          });
+          logClientError("[ProjectSearch] Error filtering individual update", err);
           return false;
         }
       });
 
-      console.log("[ProjectSearch] Filtered updates:", { query: debouncedSearchQuery, count: filtered.length });
       return filtered;
     } catch (err) {
-      console.error("[ProjectSearch] Error in update filtering:", {
-        query: debouncedSearchQuery,
-        error: err.message,
-        stack: err.stack,
-      });
+      logClientError("[ProjectSearch] Error in update filtering", err);
       return [];
     }
   }, [debouncedSearchQuery, updates]);
@@ -285,7 +242,6 @@ export default function ProjectSearch() {
     }
 
     try {
-      console.log("[ProjectSearch] Filtering documents for query:", debouncedSearchQuery);
       const query = debouncedSearchQuery.toLowerCase();
       const filtered = documents.filter((document) => {
         try {
@@ -296,22 +252,14 @@ export default function ProjectSearch() {
 
           return titleMatch || nameMatch || uploaderMatch || uploaderNameMatch;
         } catch (err) {
-          console.error("[ProjectSearch] Error filtering individual document:", {
-            documentId: document._id,
-            error: err.message,
-          });
+          logClientError("[ProjectSearch] Error filtering individual document", err);
           return false;
         }
       });
 
-      console.log("[ProjectSearch] Filtered documents:", { query: debouncedSearchQuery, count: filtered.length });
       return filtered;
     } catch (err) {
-      console.error("[ProjectSearch] Error in document filtering:", {
-        query: debouncedSearchQuery,
-        error: err.message,
-        stack: err.stack,
-      });
+      logClientError("[ProjectSearch] Error in document filtering", err);
       return [];
     }
   }, [debouncedSearchQuery, documents]);

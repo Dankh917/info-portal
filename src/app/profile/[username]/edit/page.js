@@ -15,7 +15,7 @@ export default function EditProfilePage({ params }) {
   const fileInputRef = useRef(null);
 
   const [profile, setProfile] = useState(null);
-  const [form, setForm] = useState({ name: "", bio: "" });
+  const [form, setForm] = useState({ name: "", bio: "", phone: "" });
   const [picture, setPicture] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,7 +32,7 @@ export default function EditProfilePage({ params }) {
         throw new Error(data?.error || "Unable to load profile.");
       }
       setProfile(data.profile);
-      setForm({ name: data.profile?.name || "", bio: data.profile?.bio || "" });
+      setForm({ name: data.profile?.name || "", bio: data.profile?.bio || "", phone: data.profile?.phone || "" });
     } catch (err) {
       setError(err.message || "Unable to load profile.");
     } finally {
@@ -53,6 +53,7 @@ export default function EditProfilePage({ params }) {
       const formData = new FormData();
       formData.append("name", form.name || "");
       formData.append("bio", form.bio || "");
+      formData.append("phone", form.phone || "");
       if (picture) {
         formData.append("picture", picture);
       }
@@ -66,7 +67,7 @@ export default function EditProfilePage({ params }) {
         throw new Error(data?.error || "Unable to save profile.");
       }
       setProfile(data.profile);
-      setForm({ name: data.profile?.name || "", bio: data.profile?.bio || "" });
+      setForm({ name: data.profile?.name || "", bio: data.profile?.bio || "", phone: data.profile?.phone || "" });
       if (updateSession) {
         await updateSession({ name: data.profile?.name, image: data.profile?.image });
       }
@@ -174,6 +175,21 @@ export default function EditProfilePage({ params }) {
                 className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 focus:border-emerald-300/60 focus:outline-none"
                 placeholder="Share a short intro about yourself"
               />
+            </label>
+            <label className="block text-sm text-slate-300">
+              Phone (10 digits)
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(event) => setForm((f) => ({ ...f, phone: event.target.value }))}
+                minLength={10}
+                maxLength={10}
+                placeholder="1234567890"
+                className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-emerald-300/60 focus:outline-none"
+              />
+              {form.phone && form.phone.length !== 10 && (
+                <p className="mt-1 text-xs text-rose-400">Phone must be exactly 10 digits</p>
+              )}
             </label>
             <div className="space-y-2 text-sm text-slate-300">
               <p>Profile picture (PNG)</p>

@@ -186,7 +186,6 @@ export const authOptions = {
   events: {
     async createUser({ user }) {
       const client = await clientPromise;
-      console.log("[Auth] Creating new user", { userId: user.id, email: user.email });
       try {
         const deriveUsername = (value) =>
           (value || "user")
@@ -219,7 +218,6 @@ export const authOptions = {
               } 
             },
           );
-        console.log("[Auth] New user created successfully", { userId: user.id, role: "general", departments: ["General"] });
       } catch (error) {
         await logError("Failed to create new user", error, {
           userId: user.id,
