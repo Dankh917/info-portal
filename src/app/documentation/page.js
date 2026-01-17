@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import ParticleBackground from "../particle-background";
 import styles from "../../lib/documentation.module.css";
 
 const acceptedTypes = ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf";

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { use } from "react";
+import ParticleBackground from "../../../particle-background";
 
 export default function EditProfilePage({ params }) {
   const resolvedParams = use(params);

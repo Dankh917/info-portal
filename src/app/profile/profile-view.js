@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ParticleBackground from "../particle-background";
 
 const friendLabel = {
   none: "Add friend",
