@@ -186,6 +186,18 @@
   font-weight: 600;
 }
 
+.tooltipAction {
+  border: none;
+  background: transparent;
+  color: #a5f3fc;
+  font-weight: 600;
+  padding: 0;
+}
+
+.tooltipAction:hover {
+  color: #38bdf8;
+}
+
 .eventItem:hover .tooltip,
 .weekEvent:hover .tooltip {
   opacity: 1;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import ParticleBackground from "../particle-background";
 import styles from "./calendar.module.css";
@@ -80,7 +81,8 @@ function getEventTimeLabel(event) {
 }
 
 function getEventDescription(event) {
-  return event?.description || "";
+  const raw = event?.description || "";
+  return parseUpdateMetadata(raw).message;
 }
 
 function getEventLocation(event) {
@@ -89,6 +91,62 @@ function getEventLocation(event) {
 
 function getEventLink(event) {
   return event?.htmlLink || "";
+}
+
+function parseMetadataLine(value) {
+  return value
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function parseUpdateMetadata(rawMessage) {
+  if (!rawMessage) {
+    return { message: "", tags: [], departments: [] };
+  }
+
+  const tags = [];
+  const departments = [];
+  const lines = rawMessage.split(/\r?\n/);
+  const keptLines = [];
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower.includes("#tags:")) {
+      const [, rest] = trimmed.split(/#tags:/i);
+      if (rest) {
+        tags.push(...parseMetadataLine(rest));
+      }
+      return;
+    }
+    if (lower.includes("#departments:")) {
+      const [, rest] = trimmed.split(/#departments:/i);
+      if (rest) {
+        departments.push(...parseMetadataLine(rest));
+      }
+      return;
+    }
+    keptLines.push(line);
+  });
+
+  return {
+    message: keptLines.join("\n").trim(),
+    tags,
+    departments,
+  };
+}
+
+function toDateString(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().split("T")[0];
+}
+
+function toTimeString(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toTimeString().slice(0, 5);
 }
 
 function getWeekEventsLayout(events) {
@@ -160,6 +218,7 @@ function getWeekEventsLayout(events) {
 
 export default function CalendarPage() {
   const { data: session, status } = useSession();
+  const router = useRouter();
   const [view, setView] = useState("month");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [events, setEvents] = useState([]);
@@ -234,6 +293,33 @@ export default function CalendarPage() {
       next.setMonth(next.getMonth() + 1);
     }
     setCurrentDate(next);
+  };
+
+  const handleCreateUpdate = (event) => {
+    const rawMessage = event?.description || "";
+    const { message, tags, departments } = parseUpdateMetadata(rawMessage);
+    const title = event?.summary || "Untitled event";
+    const eventDate = event?.start?.date || event?.start?.dateTime || "";
+    const eventTime = event?.start?.dateTime ? toTimeString(event.start.dateTime) : "";
+
+    const params = new URLSearchParams();
+    params.set("fromEvent", "1");
+    params.set("title", title);
+    params.set("message", message);
+    if (eventDate) {
+      params.set("date", toDateString(eventDate));
+    }
+    if (eventTime) {
+      params.set("time", eventTime);
+    }
+    if (tags.length > 0) {
+      params.set("tags", tags.join(","));
+    }
+    if (departments.length > 0) {
+      params.set("departments", departments.join(","));
+    }
+
+    router.push(`/?${params.toString()}`);
   };
 
   if (status === "loading") {
@@ -336,6 +422,15 @@ export default function CalendarPage() {
                             </a>
                           </span>
                         )}
+                        <span>
+                          <button
+                            type="button"
+                            className={styles.tooltipAction}
+                            onClick={() => handleCreateUpdate(event)}
+                          >
+                            Create update
+                          </button>
+                        </span>
                       </span>
                     </li>
                   ))}
@@ -443,6 +538,15 @@ export default function CalendarPage() {
                               </a>
                             </span>
                           )}
+                          <span>
+                            <button
+                              type="button"
+                              className={styles.tooltipAction}
+                              onClick={() => handleCreateUpdate(item.event)}
+                            >
+                              Create update
+                            </button>
+                          </span>
                         </span>
                       </div>
                     );

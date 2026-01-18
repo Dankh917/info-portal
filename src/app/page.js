@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import ProjectSearch from "./project-search";
@@ -56,10 +57,12 @@ export default function Home() {
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    return today.toISOString().split("T")[0];
   };
 
   const { data: session } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const userId = session?.user?.id;
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +74,7 @@ export default function Home() {
     happensAtTime: "",
     tags: [],
     departments: ["General"],
+    source: "",
   });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -89,6 +93,8 @@ export default function Home() {
   const [favoritesError, setFavoritesError] = useState("");
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const updateFormRef = useRef(null);
+  const prefillAppliedRef = useRef(false);
+  const [pendingPrefill, setPendingPrefill] = useState(null);
 
   const quickLinks = [
     {
@@ -190,6 +196,28 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!searchParams || prefillAppliedRef.current) return;
+    if (searchParams.get("fromEvent") !== "1") return;
+
+    const tagsParam = searchParams.get("tags") || "";
+    const departmentsParam = searchParams.get("departments") || "";
+    const parseList = (value) =>
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    setPendingPrefill({
+      title: searchParams.get("title") || "",
+      message: searchParams.get("message") || "",
+      happensAtDate: searchParams.get("date") || "",
+      happensAtTime: searchParams.get("time") || "",
+      tags: parseList(tagsParam),
+      departments: parseList(departmentsParam),
+    });
+  }, [searchParams]);
+
+  useEffect(() => {
     const loadFavorites = async () => {
       setFavoritesLoading(true);
       setFavoritesError("");
@@ -228,6 +256,50 @@ export default function Home() {
 
     loadFavorites();
   }, [session?.user]);
+
+  useEffect(() => {
+    if (!pendingPrefill) return;
+    if (tagsLoading || departmentsLoading) return;
+    if (prefillAppliedRef.current) return;
+
+    const normalize = (value) => value.trim().toLowerCase();
+    const tagLookup = new Map(tags.map((tag) => [normalize(tag.name), tag.name]));
+    const deptLookup = new Map(
+      departments.map((dept) => [normalize(dept.name), dept.name])
+    );
+
+    const selectedTags = pendingPrefill.tags
+      .map((tag) => tagLookup.get(normalize(tag)))
+      .filter(Boolean);
+    const selectedDepartments = pendingPrefill.departments
+      .map((dept) => deptLookup.get(normalize(dept)))
+      .filter(Boolean);
+    const shouldForceDepartmentPick = pendingPrefill.departments.length === 0;
+
+    setForm((f) => ({
+      ...f,
+      title: pendingPrefill.title,
+      message: pendingPrefill.message,
+      happensAtDate: pendingPrefill.happensAtDate || f.happensAtDate,
+      happensAtTime: pendingPrefill.happensAtTime || "",
+      tags: Array.from(new Set(selectedTags)),
+      departments: shouldForceDepartmentPick
+        ? []
+        : Array.from(new Set(selectedDepartments)),
+      source: "calendar",
+    }));
+    setShowUpdateForm(true);
+    prefillAppliedRef.current = true;
+    setPendingPrefill(null);
+    router.replace("/", { scroll: false });
+  }, [
+    pendingPrefill,
+    tags,
+    departments,
+    tagsLoading,
+    departmentsLoading,
+    router,
+  ]);
 
   useEffect(() => {
     if (!showUpdateForm || !updateFormRef.current) return;
@@ -283,6 +355,7 @@ export default function Home() {
           happensAt,
           tags: form.tags,
           departments: form.departments,
+          source: form.source,
         }),
       });
 
@@ -301,6 +374,7 @@ export default function Home() {
         happensAtTime: "",
         tags: [],
         departments: ["General"],
+        source: "",
       });
       setNotice("Update posted successfully.");
       setShowUpdateForm(false);
@@ -472,10 +546,10 @@ export default function Home() {
                         <div className="h-4 w-11/12 rounded bg-white/15" />
                       </div>
                     ))
-                  : updates.map((update) => (
+                    : updates.map((update) => (
                       <article
                         key={update._id?.toString?.() || update._id || update.title}
-                        className="rounded-xl border border-white/10 bg-slate-900/70 px-5 py-4 shadow-inner shadow-black/40"
+                        className="relative rounded-xl border border-white/10 bg-slate-900/70 px-5 py-4 shadow-inner shadow-black/40"
                       >
                         <div className="mb-1 flex items-center justify-between gap-3">
                           <h3 className="text-lg font-semibold text-white">
@@ -542,6 +616,13 @@ export default function Home() {
                               );
                             })}
                         </div>
+                        {update.source === "calendar" && (
+                          <img
+                            src="/assets/Calendar.png"
+                            alt="Calendar update"
+                            className="pointer-events-none absolute bottom-3 right-3 h-7 w-7 opacity-80"
+                          />
+                        )}
                       </article>
                     ))}
               </div>

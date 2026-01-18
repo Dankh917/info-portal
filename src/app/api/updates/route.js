@@ -106,6 +106,7 @@ export async function POST(request) {
     const happensAtInput = body?.happensAt;
     const tagsInput = body?.tags;
     const departmentsInput = body?.departments;
+    const sourceInput = body?.source;
 
     if (!title || !message) {
       return NextResponse.json(
@@ -212,6 +213,9 @@ export async function POST(request) {
     };
     if (happensAt) {
       doc.happensAt = happensAt;
+    }
+    if (sourceInput === "calendar") {
+      doc.source = "calendar";
     }
 
     const { insertedId } = await collection.insertOne(doc);
