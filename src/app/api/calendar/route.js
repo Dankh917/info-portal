@@ -18,6 +18,14 @@ function getWeekRange(date) {
   return { start, end };
 }
 
+function getDayRange(date) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
+  return { start, end };
+}
+
 function parseDateParam(value) {
   if (!value) return new Date();
   const parsed = new Date(value);
@@ -36,13 +44,30 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const view = searchParams.get("view") || "month";
   const dateParam = searchParams.get("date");
+  const timeMinParam = searchParams.get("timeMin");
+  const timeMaxParam = searchParams.get("timeMax");
   const baseDate = parseDateParam(dateParam);
 
   if (!baseDate) {
     return NextResponse.json({ error: "Invalid date." }, { status: 400 });
   }
 
-  const range = view === "week" ? getWeekRange(baseDate) : getMonthRange(baseDate);
+  let range;
+  if (timeMinParam && timeMaxParam) {
+    const minDate = new Date(timeMinParam);
+    const maxDate = new Date(timeMaxParam);
+    if (Number.isNaN(minDate.getTime()) || Number.isNaN(maxDate.getTime())) {
+      return NextResponse.json({ error: "Invalid time range." }, { status: 400 });
+    }
+    range = { start: minDate, end: maxDate };
+  } else if (view === "week") {
+    range = getWeekRange(baseDate);
+  } else if (view === "day") {
+    range = getDayRange(baseDate);
+  } else {
+    range = getMonthRange(baseDate);
+  }
+
   const timeMin = range.start.toISOString();
   const timeMax = range.end.toISOString();
 

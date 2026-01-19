@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ProjectSearch from "./project-search";
 import ParticleBackground from "./particle-background";
@@ -16,6 +16,50 @@ const formatDate = (value) => {
   } catch (error) {
     return "Unknown date";
   }
+};
+
+const formatTimeRange = (startValue, endValue) => {
+  if (!startValue) return "";
+  if (typeof startValue === "string" && !endValue && startValue.length === 10) {
+    return "All day";
+  }
+  const start = new Date(startValue);
+  if (Number.isNaN(start.getTime())) return "";
+  if (!endValue) {
+    return new Intl.DateTimeFormat("en", { timeStyle: "short" }).format(start);
+  }
+  const end = new Date(endValue);
+  if (Number.isNaN(end.getTime())) return "";
+  return `${new Intl.DateTimeFormat("en", { timeStyle: "short" }).format(
+    start
+  )} - ${new Intl.DateTimeFormat("en", { timeStyle: "short" }).format(end)}`;
+};
+
+const toLocalDateString = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toLocalTimeString = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes()
+  ).padStart(2, "0")}`;
+};
+
+const stripCalendarMetadata = (value) => {
+  if (!value) return "";
+  const lines = value.split(/\r?\n/);
+  const kept = lines.filter((line) => {
+    const lower = line.trim().toLowerCase();
+    return !lower.includes("#tags:") && !lower.includes("#departments:");
+  });
+  return kept.join("\n").trim();
 };
 
 const tagStyle = (color) => {
@@ -95,6 +139,8 @@ export default function Home() {
   const updateFormRef = useRef(null);
   const prefillAppliedRef = useRef(false);
   const [pendingPrefill, setPendingPrefill] = useState(null);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
 
   const quickLinks = [
     {
@@ -255,6 +301,42 @@ export default function Home() {
     }
 
     loadFavorites();
+  }, [session?.user]);
+
+  useEffect(() => {
+    const loadCalendarEvents = async () => {
+      setCalendarLoading(true);
+      try {
+        const today = new Date();
+        const start = new Date(today);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+        const params = new URLSearchParams({
+          view: "month",
+          timeMin: start.toISOString(),
+          timeMax: end.toISOString(),
+        });
+
+        const res = await fetch(`/api/calendar?${params.toString()}`);
+        if (!res.ok) {
+          setCalendarEvents([]);
+          return;
+        }
+        const data = await res.json();
+        setCalendarEvents(Array.isArray(data.items) ? data.items : []);
+      } catch (err) {
+        setCalendarEvents([]);
+      } finally {
+        setCalendarLoading(false);
+      }
+    };
+
+    if (!session?.user) {
+      setCalendarEvents([]);
+      return;
+    }
+
+    loadCalendarEvents();
   }, [session?.user]);
 
   useEffect(() => {
@@ -463,6 +545,65 @@ export default function Home() {
     return update.authorId === session.user.id || session.user.role === "admin";
   };
 
+  const localCalendarUpdates = useMemo(() => {
+    const todayKey = toLocalDateString(new Date());
+    return calendarEvents
+      .map((event) => {
+        const startValue = event?.start?.date || event?.start?.dateTime;
+        if (!startValue) return null;
+        const eventDateKey =
+          event?.start?.date || toLocalDateString(event.start.dateTime);
+        if (eventDateKey < todayKey) return null;
+        const title = event?.summary || "Untitled event";
+        const key = `${title.trim().toLowerCase()}|${eventDateKey}|${
+          event?.start?.date ? "" : toLocalTimeString(event.start.dateTime)
+        }`;
+        return {
+          _id: `local-${event.id || key}`,
+          title,
+          message: stripCalendarMetadata(event?.description || ""),
+          happensAt: event?.start?.dateTime || event?.start?.date || null,
+          createdAt: event?.start?.dateTime || event?.start?.date || null,
+          eventTimeRange: formatTimeRange(
+            event?.start?.dateTime || event?.start?.date,
+            event?.end?.dateTime || event?.end?.date
+          ),
+          calendarLink: event?.htmlLink || "",
+          source: "calendar-local",
+          isLocalCalendar: true,
+          eventKey: key,
+        };
+      })
+      .filter(Boolean);
+  }, [calendarEvents]);
+
+  const mongoUpdateKeys = useMemo(() => {
+    const keys = new Set();
+    updates.forEach((update) => {
+      if (!update?.happensAt) return;
+      const title = update.title || "";
+      const key = `${title.trim().toLowerCase()}|${toLocalDateString(
+        update.happensAt
+      )}|${toLocalTimeString(update.happensAt)}`;
+      keys.add(key);
+    });
+    return keys;
+  }, [updates]);
+
+  const filteredLocalUpdates = useMemo(
+    () => localCalendarUpdates.filter((u) => !mongoUpdateKeys.has(u.eventKey)),
+    [localCalendarUpdates, mongoUpdateKeys]
+  );
+
+  const combinedUpdates = useMemo(() => {
+    const merged = [...updates, ...filteredLocalUpdates];
+    return merged.sort((a, b) => {
+      const aTime = new Date(a.happensAt || a.createdAt || 0).getTime();
+      const bTime = new Date(b.happensAt || b.createdAt || 0).getTime();
+      return aTime - bTime;
+    });
+  }, [updates, filteredLocalUpdates]);
+
   const disableSubmit =
     posting ||
     !form.title.trim() ||
@@ -503,11 +644,12 @@ export default function Home() {
             <div className="mb-5 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Latest updates</h2>
               <div className="flex items-center gap-3">
-                {loading ? (
+                {loading || calendarLoading ? (
                   <span className="text-xs text-slate-300">Loading...</span>
                 ) : (
                   <span className="text-xs text-slate-300">
-                    {updates.length} {updates.length === 1 ? "item" : "items"}
+                    {combinedUpdates.length}{" "}
+                    {combinedUpdates.length === 1 ? "item" : "items"}
                   </span>
                 )}
                 <Link
@@ -530,13 +672,13 @@ export default function Home() {
                 {error}
               </div>
             )}
-            {!loading && updates.length === 0 ? (
+            {!loading && !calendarLoading && combinedUpdates.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center text-slate-300">
                 No updates yet. Be the first to post.
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {loading
+                {loading || calendarLoading
                   ? Array.from({ length: 3 }).map((_, index) => (
                       <div
                         key={index}
@@ -546,7 +688,7 @@ export default function Home() {
                         <div className="h-4 w-11/12 rounded bg-white/15" />
                       </div>
                     ))
-                    : updates.map((update) => (
+                  : combinedUpdates.map((update) => (
                       <article
                         key={update._id?.toString?.() || update._id || update.title}
                         className="relative rounded-xl border border-white/10 bg-slate-900/70 px-5 py-4 shadow-inner shadow-black/40"
@@ -559,7 +701,7 @@ export default function Home() {
                             <span className="text-xs text-slate-400">
                               {formatDate(update.createdAt)}
                             </span>
-                            {canEditOrDelete(update) && (
+                            {!update.isLocalCalendar && canEditOrDelete(update) && (
                               <div className="flex gap-1">
                                 <button
                                   onClick={() => handleEdit(update)}
@@ -579,7 +721,7 @@ export default function Home() {
                           </div>
                         </div>
                         <p className="text-sm leading-relaxed text-slate-200">
-                          {update.message}
+                          {update.message || "No description provided."}
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-300">
                           {update.happensAt && (
@@ -588,7 +730,29 @@ export default function Home() {
                               Happens {formatDate(update.happensAt)}
                             </span>
                           )}
-                          {Array.isArray(update.departments) &&
+                          {update.isLocalCalendar && update.eventTimeRange && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1 text-sky-100">
+                              <span className="h-2 w-2 rounded-full bg-sky-300" />
+                              Time {update.eventTimeRange}
+                            </span>
+                          )}
+                          {update.isLocalCalendar && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/30 bg-slate-800/70 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-slate-100 shadow-inner shadow-black/30">
+                              Personal
+                            </span>
+                          )}
+                          {update.isLocalCalendar && update.calendarLink && (
+                            <a
+                              href={update.calendarLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sky-200 underline decoration-sky-300/50 underline-offset-4 hover:text-sky-100"
+                            >
+                              Open in Google Calendar
+                            </a>
+                          )}
+                          {!update.isLocalCalendar &&
+                            Array.isArray(update.departments) &&
                             update.departments.map((dept) => (
                               <span
                                 key={dept}
@@ -598,7 +762,8 @@ export default function Home() {
                                 {dept}
                               </span>
                             ))}
-                          {Array.isArray(update.tags) &&
+                          {!update.isLocalCalendar &&
+                            Array.isArray(update.tags) &&
                             update.tags.map((tag) => {
                               const name = tag?.name || tag;
                               const color = tag?.color;
@@ -616,7 +781,7 @@ export default function Home() {
                               );
                             })}
                         </div>
-                        {update.source === "calendar" && (
+                        {update.isLocalCalendar && (
                           <img
                             src="/assets/Calendar.png"
                             alt="Calendar update"
