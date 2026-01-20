@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { getGoogleAccessToken } from "@/lib/google-calendar";
+import { logError } from "@/lib/logger";
 
 function normalizeLabelList(values) {
   if (!Array.isArray(values)) return [];
@@ -119,8 +120,15 @@ export async function GET(request) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      await logError("Google Calendar API error", new Error("Calendar API error"), {
+        route: "/api/calendar",
+        method: "GET",
+        status: response.status,
+        errorText,
+        userId: token?.sub,
+      });
       return NextResponse.json(
-        { error: "Google Calendar API error.", details: errorText },
+        { error: "Google Calendar API error." },
         { status: response.status }
       );
     }
@@ -133,8 +141,13 @@ export async function GET(request) {
       view,
     });
   } catch (error) {
+    await logError("Failed to load calendar data", error, {
+      route: "/api/calendar",
+      method: "GET",
+      userId: token?.sub,
+    });
     return NextResponse.json(
-      { error: "Failed to load calendar data.", details: error.message },
+      { error: "Failed to load calendar data." },
       { status: 500 }
     );
   }
@@ -195,8 +208,15 @@ export async function POST(request) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      await logError("Google Calendar API error", new Error("Calendar API error"), {
+        route: "/api/calendar",
+        method: "POST",
+        status: response.status,
+        errorText,
+        userId: token?.sub,
+      });
       return NextResponse.json(
-        { error: "Google Calendar API error.", details: errorText },
+        { error: "Google Calendar API error." },
         { status: response.status }
       );
     }
@@ -207,8 +227,13 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
+    await logError("Failed to create calendar event", error, {
+      route: "/api/calendar",
+      method: "POST",
+      userId: token?.sub,
+    });
     return NextResponse.json(
-      { error: "Failed to create calendar event.", details: error.message },
+      { error: "Failed to create calendar event." },
       { status: 500 }
     );
   }
