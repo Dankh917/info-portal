@@ -141,6 +141,10 @@ export default function Home() {
   const [pendingPrefill, setPendingPrefill] = useState(null);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarSavingId, setCalendarSavingId] = useState(null);
+  const [calendarSuccess, setCalendarSuccess] = useState({});
+  const [calendarErrorId, setCalendarErrorId] = useState(null);
+  const [calendarErrorMessage, setCalendarErrorMessage] = useState("");
 
   const quickLinks = [
     {
@@ -540,6 +544,63 @@ export default function Home() {
     }
   };
 
+  const getUpdateId = (update) =>
+    update?._id?.toString?.() || update?._id || "";
+
+  const getTagNames = (tagList) => {
+    if (!Array.isArray(tagList)) return [];
+    return tagList
+      .map((tag) => (typeof tag === "string" ? tag : tag?.name))
+      .map((tag) => (tag || "").trim())
+      .filter(Boolean);
+  };
+
+  const handleAddToCalendar = async (update) => {
+    const updateId = getUpdateId(update);
+    if (!updateId || calendarSuccess[updateId]) {
+      return;
+    }
+
+    if (!update?.happensAt) {
+      setCalendarErrorId(updateId);
+      setCalendarErrorMessage("Update date is missing.");
+      return;
+    }
+
+    setCalendarSavingId(updateId);
+    setCalendarErrorId(null);
+    setCalendarErrorMessage("");
+
+    try {
+      const res = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: update.title || "Untitled update",
+          message: update.message || "",
+          happensAt: update.happensAt,
+          tags: getTagNames(update.tags),
+          departments: Array.isArray(update.departments) ? update.departments : [],
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to add calendar event.");
+      }
+
+      setCalendarSuccess((prev) => ({
+        ...prev,
+        [updateId]: data?.event?.htmlLink || true,
+      }));
+    } catch (err) {
+      setCalendarErrorId(updateId);
+      setCalendarErrorMessage(err.message || "Unable to add calendar event.");
+    } finally {
+      setCalendarSavingId(null);
+    }
+  };
+
   const canEditOrDelete = (update) => {
     if (!session?.user) return false;
     return update.authorId === session.user.id || session.user.role === "admin";
@@ -688,108 +749,151 @@ export default function Home() {
                         <div className="h-4 w-11/12 rounded bg-white/15" />
                       </div>
                     ))
-                  : combinedUpdates.map((update) => (
-                      <article
-                        key={update._id?.toString?.() || update._id || update.title}
-                        className="relative rounded-xl border border-white/10 bg-slate-900/70 px-5 py-4 shadow-inner shadow-black/40"
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-3">
-                          <h3 className="text-lg font-semibold text-white">
-                            {update.title}
-                          </h3>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-400">
-                              {formatDate(update.createdAt)}
-                            </span>
-                            {!update.isLocalCalendar && canEditOrDelete(update) && (
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleEdit(update)}
-                                  className="rounded-md bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/30"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(update._id)}
-                                  disabled={deleting === update._id}
-                                  className="rounded-md bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30 disabled:opacity-50"
-                                >
-                                  {deleting === update._id ? "..." : "Delete"}
-                                </button>
-                              </div>
-                            )}
+                  : combinedUpdates.map((update) => {
+                      const updateId = getUpdateId(update);
+                      const showCalendarButton =
+                        !update.isLocalCalendar && update.source !== "calendar";
+                      const isSavingCalendar = calendarSavingId === updateId;
+                      const calendarLink = calendarSuccess[updateId];
+                      const hasCalendarEvent = Boolean(calendarLink);
+                      const calendarButtonClass = hasCalendarEvent
+                        ? "rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-100"
+                        : "rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-sky-100 transition hover:border-sky-200/60 hover:bg-sky-500/20";
+
+                      return (
+                        <article
+                          key={update._id?.toString?.() || update._id || update.title}
+                          className="relative rounded-xl border border-white/10 bg-slate-900/70 px-5 py-4 shadow-inner shadow-black/40"
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-3">
+                            <h3 className="text-lg font-semibold text-white">
+                              {update.title}
+                            </h3>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-400">
+                                {formatDate(update.createdAt)}
+                              </span>
+                              {!update.isLocalCalendar && canEditOrDelete(update) && (
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => handleEdit(update)}
+                                    className="rounded-md bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/30"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(update._id)}
+                                    disabled={deleting === update._id}
+                                    className="rounded-md bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30 disabled:opacity-50"
+                                  >
+                                    {deleting === update._id ? "..." : "Delete"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <p className="text-sm leading-relaxed text-slate-200">
-                          {update.message || "No description provided."}
-                        </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-300">
-                          {update.happensAt && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 px-3 py-1 text-emerald-100">
-                              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                              Happens {formatDate(update.happensAt)}
-                            </span>
+                          <p className="text-sm leading-relaxed text-slate-200">
+                            {update.message || "No description provided."}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                            {update.happensAt && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 px-3 py-1 text-emerald-100">
+                                <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                                Happens {formatDate(update.happensAt)}
+                              </span>
+                            )}
+                            {update.isLocalCalendar && update.eventTimeRange && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1 text-sky-100">
+                                <span className="h-2 w-2 rounded-full bg-sky-300" />
+                                Time {update.eventTimeRange}
+                              </span>
+                            )}
+                            {update.isLocalCalendar && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/30 bg-slate-800/70 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-slate-100 shadow-inner shadow-black/30">
+                                Personal
+                              </span>
+                            )}
+                            {update.isLocalCalendar && update.calendarLink && (
+                              <a
+                                href={update.calendarLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-sky-200 underline decoration-sky-300/50 underline-offset-4 hover:text-sky-100"
+                              >
+                                Open in Google Calendar
+                              </a>
+                            )}
+                            {!update.isLocalCalendar &&
+                              Array.isArray(update.departments) &&
+                              update.departments.map((dept) => (
+                                <span
+                                  key={dept}
+                                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200/30 bg-emerald-900/60 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-emerald-100 shadow-inner shadow-black/30"
+                                >
+                                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                                  {dept}
+                                </span>
+                              ))}
+                            {!update.isLocalCalendar &&
+                              Array.isArray(update.tags) &&
+                              update.tags.map((tag) => {
+                                const name = tag?.name || tag;
+                                const color = tag?.color;
+                                const icon = tag?.icon || "???";
+                                const style = tagStyle(color);
+                                return (
+                                  <span
+                                    key={name}
+                                    style={style}
+                                    className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-inner shadow-black/30"
+                                  >
+                                    <span className="text-base">{icon}</span>
+                                    <span className="text-[0.72rem]">{name}</span>
+                                  </span>
+                                );
+                              })}
+                          </div>
+                          {showCalendarButton && update.happensAt && (
+                            <div className="mt-4 flex items-center justify-end gap-3 text-[0.65rem]">
+                              {hasCalendarEvent && typeof calendarLink === "string" && (
+                                <a
+                                  href={calendarLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sky-200 underline decoration-sky-300/50 underline-offset-4 hover:text-sky-100"
+                                >
+                                  Open in Google Calendar
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleAddToCalendar(update)}
+                                disabled={isSavingCalendar || hasCalendarEvent}
+                                className={`${calendarButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                              >
+                                {isSavingCalendar
+                                  ? "Adding..."
+                                  : hasCalendarEvent
+                                    ? "Added"
+                                    : "Add to calendar"}
+                              </button>
+                            </div>
                           )}
-                          {update.isLocalCalendar && update.eventTimeRange && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1 text-sky-100">
-                              <span className="h-2 w-2 rounded-full bg-sky-300" />
-                              Time {update.eventTimeRange}
-                            </span>
+                          {calendarErrorId === updateId && (
+                            <p className="mt-2 text-xs text-rose-200">
+                              {calendarErrorMessage}
+                            </p>
                           )}
                           {update.isLocalCalendar && (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/30 bg-slate-800/70 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-slate-100 shadow-inner shadow-black/30">
-                              Personal
-                            </span>
+                            <img
+                              src="/assets/Calendar.png"
+                              alt="Calendar update"
+                              className="pointer-events-none absolute bottom-3 right-3 h-7 w-7 opacity-80"
+                            />
                           )}
-                          {update.isLocalCalendar && update.calendarLink && (
-                            <a
-                              href={update.calendarLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sky-200 underline decoration-sky-300/50 underline-offset-4 hover:text-sky-100"
-                            >
-                              Open in Google Calendar
-                            </a>
-                          )}
-                          {!update.isLocalCalendar &&
-                            Array.isArray(update.departments) &&
-                            update.departments.map((dept) => (
-                              <span
-                                key={dept}
-                                className="inline-flex items-center gap-1 rounded-full border border-emerald-200/30 bg-emerald-900/60 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-emerald-100 shadow-inner shadow-black/30"
-                              >
-                                <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                                {dept}
-                              </span>
-                            ))}
-                          {!update.isLocalCalendar &&
-                            Array.isArray(update.tags) &&
-                            update.tags.map((tag) => {
-                              const name = tag?.name || tag;
-                              const color = tag?.color;
-                              const icon = tag?.icon || "???";
-                              const style = tagStyle(color);
-                              return (
-                                <span
-                                  key={name}
-                                  style={style}
-                                  className="inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-inner shadow-black/30"
-                                >
-                                  <span className="text-base">{icon}</span>
-                                  <span className="text-[0.72rem]">{name}</span>
-                                </span>
-                              );
-                            })}
-                        </div>
-                        {update.isLocalCalendar && (
-                          <img
-                            src="/assets/Calendar.png"
-                            alt="Calendar update"
-                            className="pointer-events-none absolute bottom-3 right-3 h-7 w-7 opacity-80"
-                          />
-                        )}
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
               </div>
             )}
           </div>
