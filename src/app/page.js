@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ProjectSearch from "./project-search";
 import ParticleBackground from "./particle-background";
@@ -60,6 +60,23 @@ const stripCalendarMetadata = (value) => {
     return !lower.includes("#tags:") && !lower.includes("#departments:");
   });
   return kept.join("\n").trim();
+};
+
+const normalizeKeyText = (value) => (value || "").trim().toLowerCase();
+
+const buildCalendarKey = (title, dateKey, timeKey) =>
+  `${normalizeKeyText(title)}|${dateKey}|${timeKey}`;
+
+const buildDateTimeKey = (dateKey, timeKey) => `${dateKey}|${timeKey}`;
+
+const buildTitleDateKey = (title, dateKey) =>
+  `${normalizeKeyText(title)}|${dateKey}`;
+
+const CALENDAR_DEDUPE_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+const isPrivateCalendarTitle = (title) => {
+  const normalized = normalizeKeyText(title);
+  return normalized === "private event" || normalized === "busy";
 };
 
 const tagStyle = (color) => {
@@ -307,9 +324,12 @@ export default function Home() {
     loadFavorites();
   }, [session?.user]);
 
-  useEffect(() => {
-    const loadCalendarEvents = async () => {
-      setCalendarLoading(true);
+  const loadCalendarEvents = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!session?.user) return;
+      if (!silent) {
+        setCalendarLoading(true);
+      }
       try {
         const today = new Date();
         const start = new Date(today);
@@ -321,7 +341,9 @@ export default function Home() {
           timeMax: end.toISOString(),
         });
 
-        const res = await fetch(`/api/calendar?${params.toString()}`);
+        const res = await fetch(`/api/calendar?${params.toString()}`, {
+          cache: "no-store",
+        });
         if (!res.ok) {
           setCalendarEvents([]);
           return;
@@ -331,17 +353,28 @@ export default function Home() {
       } catch (err) {
         setCalendarEvents([]);
       } finally {
-        setCalendarLoading(false);
+        if (!silent) {
+          setCalendarLoading(false);
+        }
       }
-    };
+    },
+    [session?.user]
+  );
 
+  useEffect(() => {
     if (!session?.user) {
       setCalendarEvents([]);
+      setCalendarLoading(false);
       return;
     }
 
     loadCalendarEvents();
-  }, [session?.user]);
+    const interval = setInterval(() => {
+      loadCalendarEvents({ silent: true });
+    }, 60_000);
+
+    return () => clearInterval(interval);
+  }, [loadCalendarEvents, session?.user]);
 
   useEffect(() => {
     if (!pendingPrefill) return;
@@ -593,6 +626,7 @@ export default function Home() {
         ...prev,
         [updateId]: data?.event?.htmlLink || true,
       }));
+      loadCalendarEvents({ silent: true });
     } catch (err) {
       setCalendarErrorId(updateId);
       setCalendarErrorMessage(err.message || "Unable to add calendar event.");
@@ -612,13 +646,16 @@ export default function Home() {
       .map((event) => {
         const startValue = event?.start?.date || event?.start?.dateTime;
         if (!startValue) return null;
+        const isAllDay = Boolean(event?.start?.date);
         const eventDateKey =
           event?.start?.date || toLocalDateString(event.start.dateTime);
         if (eventDateKey < todayKey) return null;
         const title = event?.summary || "Untitled event";
-        const key = `${title.trim().toLowerCase()}|${eventDateKey}|${
-          event?.start?.date ? "" : toLocalTimeString(event.start.dateTime)
-        }`;
+        const timeKey = isAllDay ? "" : toLocalTimeString(event.start.dateTime);
+        const key = buildCalendarKey(title, eventDateKey, timeKey);
+        const startMs = isAllDay
+          ? new Date(`${eventDateKey}T00:00:00`).getTime()
+          : new Date(event.start.dateTime).getTime();
         return {
           _id: `local-${event.id || key}`,
           title,
@@ -633,26 +670,78 @@ export default function Home() {
           source: "calendar-local",
           isLocalCalendar: true,
           eventKey: key,
+          dateTimeKey: buildDateTimeKey(eventDateKey, timeKey),
+          dateOnlyKey: buildDateTimeKey(eventDateKey, ""),
+          isAllDay,
+          isPrivateEvent: isPrivateCalendarTitle(title),
+          dateKey: eventDateKey,
+          startMs,
         };
       })
       .filter(Boolean);
   }, [calendarEvents]);
 
   const mongoUpdateKeys = useMemo(() => {
-    const keys = new Set();
+    const fullKeys = new Set();
+    const dateTimeKeys = new Set();
+    const dateOnlyKeys = new Set();
+    const titleDateKeys = new Set();
+    const titleTimeIndex = new Map();
     updates.forEach((update) => {
       if (!update?.happensAt) return;
       const title = update.title || "";
-      const key = `${title.trim().toLowerCase()}|${toLocalDateString(
-        update.happensAt
-      )}|${toLocalTimeString(update.happensAt)}`;
-      keys.add(key);
+      const dateKey = toLocalDateString(update.happensAt);
+      if (!dateKey) return;
+      const timeKey = toLocalTimeString(update.happensAt);
+      fullKeys.add(buildCalendarKey(title, dateKey, timeKey));
+      dateTimeKeys.add(buildDateTimeKey(dateKey, timeKey));
+      if (timeKey === "00:00") {
+        dateOnlyKeys.add(buildDateTimeKey(dateKey, ""));
+      }
+      titleDateKeys.add(buildTitleDateKey(title, dateKey));
+      const titleKey = normalizeKeyText(title);
+      const updateMs = new Date(update.happensAt).getTime();
+      if (!Number.isNaN(updateMs)) {
+        const entries = titleTimeIndex.get(titleKey) || [];
+        entries.push({ ms: updateMs, dateKey });
+        titleTimeIndex.set(titleKey, entries);
+      }
     });
-    return keys;
+    return { fullKeys, dateTimeKeys, dateOnlyKeys, titleDateKeys, titleTimeIndex };
   }, [updates]);
 
   const filteredLocalUpdates = useMemo(
-    () => localCalendarUpdates.filter((u) => !mongoUpdateKeys.has(u.eventKey)),
+    () =>
+      localCalendarUpdates.filter((u) => {
+        if (mongoUpdateKeys.fullKeys.has(u.eventKey)) {
+          return false;
+        }
+        const titleKey = normalizeKeyText(u.title);
+        const titleDateKey = buildTitleDateKey(u.title, u.dateKey);
+        const titleEntries = mongoUpdateKeys.titleTimeIndex.get(titleKey);
+        if (titleEntries && Number.isFinite(u.startMs)) {
+          const hasCloseMatch = titleEntries.some(
+            (entry) =>
+              entry.dateKey === u.dateKey &&
+              Math.abs(entry.ms - u.startMs) <= CALENDAR_DEDUPE_WINDOW_MS
+          );
+          if (hasCloseMatch) {
+            return false;
+          }
+        }
+        if (u.isAllDay && mongoUpdateKeys.titleDateKeys.has(titleDateKey)) {
+          return false;
+        }
+        if (u.isPrivateEvent) {
+          if (mongoUpdateKeys.dateTimeKeys.has(u.dateTimeKey)) {
+            return false;
+          }
+          if (u.isAllDay && mongoUpdateKeys.dateOnlyKeys.has(u.dateOnlyKey)) {
+            return false;
+          }
+        }
+        return true;
+      }),
     [localCalendarUpdates, mongoUpdateKeys]
   );
 
