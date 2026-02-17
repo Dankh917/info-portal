@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -22,6 +22,9 @@ const statusColor = {
   blocked: "bg-amber-900/60 text-amber-100 border-amber-400/50",
   done: "bg-emerald-800 text-emerald-50 border-emerald-300/60",
 };
+
+const getStatusLabel = (value) =>
+  STATUS_OPTIONS.find((option) => option.value === value)?.label || "Planned";
 
 const formatDate = (value) => {
   if (!value) return "No date";
@@ -134,6 +137,13 @@ function ProjectCard({
         {project.summary || "No summary"}
       </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.12em] ${
+            statusColor[project.status] || statusColor.planned
+          }`}
+        >
+          {getStatusLabel(project.status)}
+        </span>
         {project.dueDate && (
           <span
             className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 ${
@@ -194,7 +204,7 @@ function ProjectCard({
   );
 }
 
-export default function ProjectsPage() {
+function ProjectsPageContent() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const preferredProjectId = searchParams?.get("id") || "";
@@ -731,20 +741,22 @@ export default function ProjectsPage() {
     return departments;
   }, [departments, isPm, userDepartments]);
 
-  const isOwner = selected?.createdBy?.id === userId;
-  const canManageSelected =
-    !!selected &&
-    (isAdmin ||
-      (isPm &&
-        Array.isArray(selected.departments) &&
-        selected.departments.length > 0 &&
-        selected.departments.every((dept) => userDepartments.includes(dept))));
-
-  const canDeleteInstruction = isAdmin || (isPm && canManageSelected);
-
-  const canEditInstruction = (insAuthorId) => {
-    return isAdmin || (isPm && canManageSelected);
+  const canManageProject = (project) => {
+    if (!project) return false;
+    const owner = project?.createdBy?.id === userId;
+    const pmHasAccess =
+      isPm &&
+      Array.isArray(project.departments) &&
+      project.departments.length > 0 &&
+      project.departments.every((dept) => userDepartments.includes(dept));
+    return isAdmin || owner || pmHasAccess;
   };
+
+  const canManageSelected = canManageProject(selected);
+
+  const canDeleteInstruction = isAdmin || canManageSelected;
+
+  const canEditInstruction = () => isAdmin || canManageSelected;
 
   const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
   const favoriteProjects = useMemo(
@@ -834,7 +846,7 @@ export default function ProjectsPage() {
                         project={project}
                         selected={selected?._id === project._id}
                         onSelect={handleSelect}
-                        canManage={canManageProjects}
+                        canManage={canManageProject(project)}
                         onEdit={startEdit}
                         onDelete={deleteProject}
                         isFavorite={isFavorite}
@@ -884,7 +896,7 @@ export default function ProjectsPage() {
                       project={project}
                       selected={selected?._id === project._id}
                       onSelect={handleSelect}
-                      canManage={canManageProjects}
+                      canManage={canManageProject(project)}
                       onEdit={startEdit}
                       onDelete={deleteProject}
                       isFavorite={isFavorite}
@@ -916,6 +928,13 @@ export default function ProjectsPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs text-emerald-100/90">
+                  <span
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-semibold uppercase tracking-[0.12em] ${
+                      statusColor[selected.status] || statusColor.planned
+                    }`}
+                  >
+                    {getStatusLabel(selected.status)}
+                  </span>
                   {selected.dueDate && (
                     <span
                       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 ${
@@ -1465,7 +1484,7 @@ export default function ProjectsPage() {
           </div>
         </section>
 
-        {canManageProjects && showForm && (
+        {(canManageProjects || editingId) && showForm && (
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/30">
             <div className="mb-3 flex items-center justify-between">
               <div>
@@ -1526,7 +1545,7 @@ export default function ProjectsPage() {
                   placeholder="What is this project about?"
                 />
               </label>
-              <div className="grid grid-cols-2 gap-4 sm:col-span-2 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-3">
                 <label className="flex flex-col gap-2 text-sm font-semibold text-white">
                   Due date
                   <input
@@ -1536,7 +1555,23 @@ export default function ProjectsPage() {
                     className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-base text-white focus:border-emerald-300/50 focus:outline-none"
                   />
                 </label>
-                <label className="flex flex-col gap-2 text-sm font-semibold text-white sm:col-span-2">
+                <label className="flex flex-col gap-2 text-sm font-semibold text-white">
+                  Status
+                  <select
+                    value={form.status}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, status: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-base text-white focus:border-emerald-300/50 focus:outline-none"
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-white">
                   Tags (comma separated)
                   <input
                     type="text"
@@ -1641,6 +1676,25 @@ export default function ProjectsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+function ProjectsPageFallback() {
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <ParticleBackground />
+      <main className="relative z-10 mx-auto max-w-7xl px-4 py-16 sm:px-8">
+        <p className="text-sm text-slate-300">Loading projects...</p>
+      </main>
+    </div>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <Suspense fallback={<ProjectsPageFallback />}>
+      <ProjectsPageContent />
+    </Suspense>
   );
 }
 

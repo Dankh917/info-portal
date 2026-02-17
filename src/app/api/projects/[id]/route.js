@@ -223,7 +223,8 @@ export async function PATCH(request, context) {
     const status = body?.status?.toLowerCase?.();
     const departmentsInput = body?.departments;
     const dueDateInput = body?.dueDate;
-    const tags = normalizeTags(body?.tags);
+    const hasTagsField = Object.prototype.hasOwnProperty.call(body, "tags");
+    const tags = hasTagsField ? normalizeTags(body?.tags) : null;
     const assignmentsInput = Array.isArray(body?.assignments) ? body.assignments : null;
 
     const update = {};
@@ -252,7 +253,7 @@ export async function PATCH(request, context) {
       update.status = status;
     }
 
-    if (tags !== undefined) {
+    if (hasTagsField) {
       update.tags = tags;
     }
 

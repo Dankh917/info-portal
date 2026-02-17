@@ -3,6 +3,16 @@ import { getToken } from "next-auth/jwt";
 import { getGoogleAccessToken } from "@/lib/google-calendar";
 import { logError } from "@/lib/logger";
 
+const GOOGLE_RECONNECT_MESSAGE =
+  "Google Calendar needs to be reconnected. Please sign out and sign in again.";
+
+function isGoogleReconnectError(error) {
+  return (
+    error?.code === "GOOGLE_REAUTH_REQUIRED" ||
+    error?.code === "GOOGLE_ACCOUNT_NOT_FOUND"
+  );
+}
+
 function normalizeLabelList(values) {
   if (!Array.isArray(values)) return [];
   return values
@@ -120,6 +130,12 @@ export async function GET(request) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      if (response.status === 401 || response.status === 403) {
+        return NextResponse.json(
+          { error: GOOGLE_RECONNECT_MESSAGE, needsReconnect: true },
+          { status: 403 },
+        );
+      }
       await logError("Google Calendar API error", new Error("Calendar API error"), {
         route: "/api/calendar",
         method: "GET",
@@ -141,6 +157,12 @@ export async function GET(request) {
       view,
     });
   } catch (error) {
+    if (isGoogleReconnectError(error)) {
+      return NextResponse.json(
+        { error: GOOGLE_RECONNECT_MESSAGE, needsReconnect: true },
+        { status: 403 },
+      );
+    }
     await logError("Failed to load calendar data", error, {
       route: "/api/calendar",
       method: "GET",
@@ -208,6 +230,12 @@ export async function POST(request) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      if (response.status === 401 || response.status === 403) {
+        return NextResponse.json(
+          { error: GOOGLE_RECONNECT_MESSAGE, needsReconnect: true },
+          { status: 403 },
+        );
+      }
       await logError("Google Calendar API error", new Error("Calendar API error"), {
         route: "/api/calendar",
         method: "POST",
@@ -227,6 +255,12 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
+    if (isGoogleReconnectError(error)) {
+      return NextResponse.json(
+        { error: GOOGLE_RECONNECT_MESSAGE, needsReconnect: true },
+        { status: 403 },
+      );
+    }
     await logError("Failed to create calendar event", error, {
       route: "/api/calendar",
       method: "POST",

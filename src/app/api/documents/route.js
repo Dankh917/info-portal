@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { clientPromise, getDocumentsCollection } from "@/lib/mongo";
 import { logError } from "@/lib/logger";
 import { getToken } from "next-auth/jwt";
+import { hasAccessToDocument } from "@/lib/document-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,51 +26,6 @@ const toObjectId = (value) => {
   } catch (error) {
     return null;
   }
-};
-
-// Helper to check if user has access to a document based on hierarchy
-const hasAccessToDocument = (doc, userToken) => {
-  // User always has access to their own private documents
-  if (doc.isPrivate && doc.uploadedBy === userToken.sub) {
-    return true;
-  }
-
-  // Don't show other users' private documents
-  if (doc.isPrivate) {
-    return false;
-  }
-
-  // Check hierarchy level access
-  const docLevel = doc.hierarchyLevel ?? 3; // Default to level 3 (everyone)
-  const userRole = userToken.role?.toLowerCase() || "general";
-
-  // Level 0: Only admins
-  if (docLevel === 0) {
-    return userRole === "admin";
-  }
-
-  // Level 1: Admins and PR managers
-  if (docLevel === 1) {
-    return userRole === "admin" || userRole === "pr_manager";
-  }
-
-  // Level 2: Same role access (general, operations, etc.)
-  if (docLevel === 2) {
-    // User can see level 2 docs that match their department/role
-    if (doc.accessRoles && Array.isArray(doc.accessRoles) && doc.accessRoles.length > 0) {
-      const userDepartments = userToken.departments || [];
-      // Check if user has any matching department (excluding admin)
-      const hasMatchingDept = userDepartments.some(dept => 
-        doc.accessRoles.includes(dept) && dept.toLowerCase() !== "admin"
-      );
-      return hasMatchingDept || userRole === "admin";
-    }
-    // If no specific roles set, allow non-general users
-    return userRole !== "general" || userRole === "admin";
-  }
-
-  // Level 3: Everyone can access
-  return true;
 };
 
 export async function GET(request) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import ParticleBackground from "../particle-background";
 import styles from "./calendar.module.css";
 
@@ -10,6 +10,12 @@ const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS_START = 8;
 const HOURS_END = 22;
 const HOUR_HEIGHT = 64;
+const GOOGLE_AUTH_PARAMS = {
+  prompt: "consent select_account",
+  access_type: "offline",
+  scope:
+    "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events",
+};
 
 function formatDateKey(date) {
   const year = date.getFullYear();
@@ -224,6 +230,7 @@ export default function CalendarPage() {
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [needsReconnect, setNeedsReconnect] = useState(false);
 
   useEffect(() => {
     if (status !== "authenticated") {
@@ -240,10 +247,12 @@ export default function CalendarPage() {
         );
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));
+          setNeedsReconnect(Boolean(data?.needsReconnect));
           throw new Error(data.error || "Failed to load calendar.");
         }
         const data = await response.json();
         setEvents(data.items || []);
+        setNeedsReconnect(false);
       } catch (err) {
         setError(err.message || "Failed to load calendar.");
       } finally {
@@ -323,7 +332,7 @@ export default function CalendarPage() {
   };
 
   if (status === "loading") {
-    return <div className={styles.shell}>Loading calendar…</div>;
+    return <div className={styles.shell}>Loading calendar...</div>;
   }
 
   if (status !== "authenticated") {
@@ -378,8 +387,20 @@ export default function CalendarPage() {
         </button>
       </div>
 
-      {isLoading && <p className={styles.message}>Loading events…</p>}
+      {isLoading && <p className={styles.message}>Loading events...</p>}
       {error && <p className={styles.error}>{error}</p>}
+      {needsReconnect && (
+        <div className={styles.actions} style={{ marginTop: "0.75rem" }}>
+          <button
+            className={styles.actionButton}
+            onClick={() =>
+              signIn("google", { callbackUrl: "/calendar" }, GOOGLE_AUTH_PARAMS)
+            }
+          >
+            Reconnect Google Calendar
+          </button>
+        </div>
+      )}
 
       {view === "month" ? (
         <div className={styles.grid}>

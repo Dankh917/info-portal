@@ -3,6 +3,12 @@ import { clientPromise } from "@/lib/mongo";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
+function createGoogleAuthError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 function getUserObjectId(userId) {
   if (!userId) return null;
   if (ObjectId.isValid(userId)) {
@@ -46,6 +52,15 @@ async function refreshGoogleAccessToken(refreshToken) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (
+      response.status === 400 &&
+      /invalid_grant|invalid_request|token/i.test(errorText)
+    ) {
+      throw createGoogleAuthError(
+        "Google authorization expired. Reconnect your Google account.",
+        "GOOGLE_REAUTH_REQUIRED",
+      );
+    }
     throw new Error(`Failed to refresh Google token: ${errorText}`);
   }
 
@@ -55,7 +70,10 @@ async function refreshGoogleAccessToken(refreshToken) {
 export async function getGoogleAccessToken(userId) {
   const account = await getGoogleAccount(userId);
   if (!account) {
-    throw new Error("No Google account found for user.");
+    throw createGoogleAuthError(
+      "No Google account found for user.",
+      "GOOGLE_ACCOUNT_NOT_FOUND",
+    );
   }
 
   const expiresAtMs = account.expires_at ? account.expires_at * 1000 : 0;
@@ -66,7 +84,10 @@ export async function getGoogleAccessToken(userId) {
   }
 
   if (!account.refresh_token) {
-    throw new Error("Google refresh token is missing.");
+    throw createGoogleAuthError(
+      "Google refresh token is missing.",
+      "GOOGLE_REAUTH_REQUIRED",
+    );
   }
 
   const refreshed = await refreshGoogleAccessToken(account.refresh_token);

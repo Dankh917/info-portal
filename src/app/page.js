@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ProjectSearch from "./project-search";
 import ParticleBackground from "./particle-background";
@@ -15,6 +15,16 @@ const formatDate = (value) => {
     }).format(new Date(value));
   } catch (error) {
     return "Unknown date";
+  }
+};
+
+const formatDateOnly = (value) => {
+  try {
+    return new Intl.DateTimeFormat("en", {
+      dateStyle: "medium",
+    }).format(new Date(value));
+  } catch (error) {
+    return "No due date";
   }
 };
 
@@ -73,10 +83,20 @@ const buildTitleDateKey = (title, dateKey) =>
   `${normalizeKeyText(title)}|${dateKey}`;
 
 const CALENDAR_DEDUPE_WINDOW_MS = 3 * 60 * 60 * 1000;
+const EXPANDABLE_UPDATE_CHAR_LIMIT = 420;
+const EXPANDABLE_UPDATE_LINE_LIMIT = 6;
+const EXEC_DUE_WINDOW_DAYS = 7;
 
 const isPrivateCalendarTitle = (title) => {
   const normalized = normalizeKeyText(title);
   return normalized === "private event" || normalized === "busy";
+};
+
+const isExpandableUpdateMessage = (message) => {
+  const text = (message || "").trim();
+  if (!text) return false;
+  if (text.length > EXPANDABLE_UPDATE_CHAR_LIMIT) return true;
+  return text.split(/\r?\n/).length > EXPANDABLE_UPDATE_LINE_LIMIT;
 };
 
 const tagStyle = (color) => {
@@ -114,7 +134,18 @@ const formatStatus = (status) => {
   return status.replaceAll("_", " ");
 };
 
-export default function Home() {
+const riskHighlightStyle = (level) => {
+  switch (level) {
+    case "high":
+      return "border-rose-300/40 bg-rose-500/10 text-rose-100";
+    case "medium":
+      return "border-amber-300/40 bg-amber-500/10 text-amber-100";
+    default:
+      return "border-emerald-300/40 bg-emerald-500/10 text-emerald-100";
+  }
+};
+
+function HomeContent() {
   // Get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
     const today = new Date();
@@ -149,6 +180,9 @@ export default function Home() {
   const [editForm, setEditForm] = useState({ title: "", message: "" });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState("");
   const [favoriteProjects, setFavoriteProjects] = useState([]);
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState("");
@@ -162,6 +196,8 @@ export default function Home() {
   const [calendarSuccess, setCalendarSuccess] = useState({});
   const [calendarErrorId, setCalendarErrorId] = useState(null);
   const [calendarErrorMessage, setCalendarErrorMessage] = useState("");
+  const [calendarNotice, setCalendarNotice] = useState("");
+  const [expandedUpdateId, setExpandedUpdateId] = useState(null);
 
   const quickLinks = [
     {
@@ -288,6 +324,8 @@ export default function Home() {
     const loadFavorites = async () => {
       setFavoritesLoading(true);
       setFavoritesError("");
+      setProjectsLoading(true);
+      setProjectsError("");
 
       try {
         const res = await fetch("/api/projects", { cache: "no-store" });
@@ -305,16 +343,23 @@ export default function Home() {
           (project) => favorites.has(project._id) || project.isFavorite,
         );
 
+        setProjects(projects);
         setFavoriteProjects(onlyFavorites);
       } catch (err) {
         setFavoritesError(err.message || "Unable to load favorites.");
+        setProjectsError(err.message || "Unable to load projects.");
+        setProjects([]);
         setFavoriteProjects([]);
       } finally {
         setFavoritesLoading(false);
+        setProjectsLoading(false);
       }
     };
 
     if (!session?.user) {
+      setProjects([]);
+      setProjectsError("");
+      setProjectsLoading(false);
       setFavoriteProjects([]);
       setFavoritesError("");
       setFavoritesLoading(false);
@@ -345,13 +390,24 @@ export default function Home() {
           cache: "no-store",
         });
         if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 403 && data?.needsReconnect) {
+            setCalendarNotice(
+              data?.error ||
+                "Google Calendar needs to be reconnected. Sign out and sign in again.",
+            );
+          } else {
+            setCalendarNotice("");
+          }
           setCalendarEvents([]);
           return;
         }
         const data = await res.json();
         setCalendarEvents(Array.isArray(data.items) ? data.items : []);
+        setCalendarNotice("");
       } catch (err) {
         setCalendarEvents([]);
+        setCalendarNotice("");
       } finally {
         if (!silent) {
           setCalendarLoading(false);
@@ -365,6 +421,7 @@ export default function Home() {
     if (!session?.user) {
       setCalendarEvents([]);
       setCalendarLoading(false);
+      setCalendarNotice("");
       return;
     }
 
@@ -750,9 +807,198 @@ export default function Home() {
     return merged.sort((a, b) => {
       const aTime = new Date(a.happensAt || a.createdAt || 0).getTime();
       const bTime = new Date(b.happensAt || b.createdAt || 0).getTime();
-      return aTime - bTime;
+      return bTime - aTime;
     });
   }, [updates, filteredLocalUpdates]);
+
+  const executiveDashboard = useMemo(() => {
+    const visibleProjects = Array.isArray(projects) ? projects : [];
+    const now = new Date();
+    const startToday = new Date(now);
+    startToday.setHours(0, 0, 0, 0);
+    const dueWindowEnd = new Date(startToday);
+    dueWindowEnd.setDate(dueWindowEnd.getDate() + EXEC_DUE_WINDOW_DAYS);
+
+    const blockedProjects = [];
+    const dueThisWeekProjects = [];
+    let overdueProjectsCount = 0;
+    let unassignedProjectsCount = 0;
+    const departmentMap = new Map();
+
+    const ensureDepartment = (departmentName) => {
+      const key = (departmentName || "General").toString().trim() || "General";
+      if (!departmentMap.has(key)) {
+        departmentMap.set(key, {
+          department: key,
+          totalProjects: 0,
+          openProjects: 0,
+          blockedProjects: 0,
+          dueThisWeek: 0,
+          recentUpdates: 0,
+          riskScore: 0,
+        });
+      }
+      return departmentMap.get(key);
+    };
+
+    visibleProjects.forEach((project) => {
+      const status = (project?.status || "").toLowerCase();
+      const isDone = status === "done";
+      const isBlocked = status === "blocked";
+      const assignments = Array.isArray(project?.assignments) ? project.assignments : [];
+      if (assignments.length === 0) {
+        unassignedProjectsCount += 1;
+      }
+
+      const dueDate = project?.dueDate ? new Date(project.dueDate) : null;
+      const hasDueDate = dueDate && !Number.isNaN(dueDate.getTime());
+      const isOverdue = Boolean(hasDueDate && dueDate < startToday && !isDone);
+      const isDueThisWeek = Boolean(
+        hasDueDate && dueDate >= startToday && dueDate < dueWindowEnd && !isDone
+      );
+
+      if (isBlocked) {
+        blockedProjects.push(project);
+      }
+      if (isDueThisWeek) {
+        dueThisWeekProjects.push(project);
+      }
+      if (isOverdue) {
+        overdueProjectsCount += 1;
+      }
+
+      const departmentsForProject =
+        Array.isArray(project?.departments) && project.departments.length > 0
+          ? project.departments
+          : ["General"];
+
+      departmentsForProject.forEach((department) => {
+        const summary = ensureDepartment(department);
+        summary.totalProjects += 1;
+        if (!isDone) summary.openProjects += 1;
+        if (isBlocked) summary.blockedProjects += 1;
+        if (isDueThisWeek) summary.dueThisWeek += 1;
+      });
+    });
+
+    updates.forEach((update) => {
+      const updateDepartments =
+        Array.isArray(update?.departments) && update.departments.length > 0
+          ? update.departments
+          : ["General"];
+      updateDepartments.forEach((department) => {
+        ensureDepartment(department).recentUpdates += 1;
+      });
+    });
+
+    const dueTime = (project) => {
+      if (!project?.dueDate) return Number.POSITIVE_INFINITY;
+      const parsed = new Date(project.dueDate).getTime();
+      return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+    };
+
+    const blockedProjectsSorted = [...blockedProjects].sort((a, b) => {
+      const aDue = dueTime(a);
+      const bDue = dueTime(b);
+      if (aDue !== bDue) return aDue - bDue;
+      const aUpdated = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+      const bUpdated = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+      return bUpdated - aUpdated;
+    });
+
+    const dueThisWeekProjectsSorted = [...dueThisWeekProjects].sort(
+      (a, b) => dueTime(a) - dueTime(b)
+    );
+
+    const departmentActivity = Array.from(departmentMap.values())
+      .map((entry) => {
+        const blockedRate =
+          entry.totalProjects > 0 ? entry.blockedProjects / entry.totalProjects : 0;
+        const noRecentUpdateRisk =
+          entry.openProjects > 0 && entry.recentUpdates === 0 ? 2 : 0;
+        const blockedConcentrationRisk =
+          entry.blockedProjects > 0 && blockedRate >= 0.4 ? 2 : 0;
+        const riskScore =
+          entry.blockedProjects * 3 +
+          entry.dueThisWeek * 2 +
+          noRecentUpdateRisk +
+          blockedConcentrationRisk;
+
+        return {
+          ...entry,
+          riskScore,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.riskScore - a.riskScore ||
+          b.openProjects - a.openProjects ||
+          b.recentUpdates - a.recentUpdates ||
+          a.department.localeCompare(b.department),
+      );
+
+    const dueSoonBlockedCount = blockedProjectsSorted.filter((project) => {
+      const projectDue = dueTime(project);
+      return projectDue >= startToday.getTime() && projectDue < dueWindowEnd.getTime();
+    }).length;
+
+    const riskHighlights = [];
+    if (blockedProjectsSorted.length > 0) {
+      riskHighlights.push({
+        key: "blocked",
+        level: "high",
+        text: `${blockedProjectsSorted.length} blocked project${
+          blockedProjectsSorted.length === 1 ? "" : "s"
+        } need attention.`,
+      });
+    }
+    if (overdueProjectsCount > 0) {
+      riskHighlights.push({
+        key: "overdue",
+        level: "high",
+        text: `${overdueProjectsCount} overdue project${
+          overdueProjectsCount === 1 ? "" : "s"
+        } are past due date.`,
+      });
+    }
+    if (dueSoonBlockedCount > 0) {
+      riskHighlights.push({
+        key: "blocked-soon",
+        level: "medium",
+        text: `${dueSoonBlockedCount} blocked project${
+          dueSoonBlockedCount === 1 ? "" : "s"
+        } due within ${EXEC_DUE_WINDOW_DAYS} days.`,
+      });
+    }
+    if (unassignedProjectsCount > 0) {
+      riskHighlights.push({
+        key: "unassigned",
+        level: "medium",
+        text: `${unassignedProjectsCount} project${
+          unassignedProjectsCount === 1 ? "" : "s"
+        } have no assigned owner.`,
+      });
+    }
+    if (riskHighlights.length === 0) {
+      riskHighlights.push({
+        key: "clear",
+        level: "low",
+        text: "No major execution risks detected in your visible scope.",
+      });
+    }
+
+    return {
+      totalProjects: visibleProjects.length,
+      blockedProjectsCount: blockedProjectsSorted.length,
+      dueThisWeekProjectsCount: dueThisWeekProjectsSorted.length,
+      overdueProjectsCount,
+      unassignedProjectsCount,
+      blockedProjects: blockedProjectsSorted.slice(0, 4),
+      dueThisWeekProjects: dueThisWeekProjectsSorted.slice(0, 4),
+      departmentActivity: departmentActivity.slice(0, 6),
+      riskHighlights,
+    };
+  }, [projects, updates]);
 
   const disableSubmit =
     posting ||
@@ -783,14 +1029,201 @@ export default function Home() {
 
         <ProjectSearch />
 
+        <section className="rounded-2xl border border-cyan-300/20 bg-cyan-900/10 p-6 shadow-xl shadow-black/30 backdrop-blur">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">
+                Executive dashboard
+              </p>
+              <h2 className="text-2xl font-semibold text-cyan-50">
+                Operations snapshot
+              </h2>
+            </div>
+            <span className="text-xs uppercase tracking-[0.18em] text-cyan-100/70">
+              Scope: {executiveDashboard.totalProjects} visible project
+              {executiveDashboard.totalProjects === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {projectsError && (
+            <div className="mb-4 rounded-lg border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              {projectsError}
+            </div>
+          )}
+
+          {projectsLoading ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={`exec-skeleton-stat-${index}`}
+                    className="h-24 animate-pulse rounded-xl border border-white/10 bg-white/5"
+                  />
+                ))}
+              </div>
+              <div className="grid gap-3 xl:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={`exec-skeleton-card-${index}`}
+                    className="h-44 animate-pulse rounded-xl border border-white/10 bg-white/5"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-rose-100/80">
+                    Blocked projects
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold text-rose-50">
+                    {executiveDashboard.blockedProjectsCount}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-amber-100/80">
+                    Due in {EXEC_DUE_WINDOW_DAYS} days
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold text-amber-50">
+                    {executiveDashboard.dueThisWeekProjectsCount}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-rose-100/80">
+                    Overdue projects
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold text-rose-50">
+                    {executiveDashboard.overdueProjectsCount}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-cyan-300/40 bg-cyan-500/10 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-cyan-100/80">
+                    Unassigned owners
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold text-cyan-50">
+                    {executiveDashboard.unassignedProjectsCount}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 xl:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-slate-300">
+                    Blocked spotlight
+                  </p>
+                  {executiveDashboard.blockedProjects.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-300">
+                      No blocked projects in your current scope.
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {executiveDashboard.blockedProjects.map((project) => (
+                        <li key={project._id}>
+                          <Link
+                            href={`/projects?id=${project._id}`}
+                            className="block rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-rose-300/40 hover:bg-rose-500/10"
+                          >
+                            <p className="text-sm font-semibold text-white">{project.title}</p>
+                            <p className="mt-1 text-xs text-slate-300">
+                              Due {project.dueDate ? formatDateOnly(project.dueDate) : "Not set"}
+                            </p>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-slate-300">
+                    Due soon
+                  </p>
+                  {executiveDashboard.dueThisWeekProjects.length === 0 ? (
+                    <p className="mt-3 text-sm text-slate-300">
+                      No open projects due in the next {EXEC_DUE_WINDOW_DAYS} days.
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {executiveDashboard.dueThisWeekProjects.map((project) => (
+                        <li key={project._id}>
+                          <Link
+                            href={`/projects?id=${project._id}`}
+                            className="block rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:border-amber-300/40 hover:bg-amber-500/10"
+                          >
+                            <p className="text-sm font-semibold text-white">{project.title}</p>
+                            <p className="mt-1 text-xs text-slate-300">
+                              Due {formatDateOnly(project.dueDate)}
+                            </p>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-slate-300">
+                    Risk highlights
+                  </p>
+                  <ul className="mt-3 space-y-2">
+                    {executiveDashboard.riskHighlights.map((risk) => (
+                      <li
+                        key={risk.key}
+                        className={`rounded-lg border px-3 py-2 text-sm ${riskHighlightStyle(
+                          risk.level
+                        )}`}
+                      >
+                        {risk.text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[0.68rem] uppercase tracking-[0.16em] text-slate-300">
+                    Department activity
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Update signal uses latest feed window.
+                  </p>
+                </div>
+                {executiveDashboard.departmentActivity.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-300">
+                    No department activity available yet.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {executiveDashboard.departmentActivity.map((department) => (
+                      <div
+                        key={department.department}
+                        className="grid gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 sm:grid-cols-[1.3fr_repeat(5,minmax(0,1fr))]"
+                      >
+                        <span className="font-semibold text-white">{department.department}</span>
+                        <span>Projects: {department.totalProjects}</span>
+                        <span>Open: {department.openProjects}</span>
+                        <span>Blocked: {department.blockedProjects}</span>
+                        <span>Due soon: {department.dueThisWeek}</span>
+                        <span>Updates: {department.recentUpdates}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
         <section
           className={
             showFavorites
-              ? "grid gap-6 lg:grid-cols-[1fr_1fr] lg:items-start"
+              ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start"
               : "grid gap-6"
           }
         >
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
+          <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/30 backdrop-blur">
             <div className="mb-5 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Latest updates</h2>
               <div className="flex items-center gap-3">
@@ -822,6 +1255,11 @@ export default function Home() {
                 {error}
               </div>
             )}
+            {calendarNotice && (
+              <div className="mb-4 rounded-lg border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                {calendarNotice}
+              </div>
+            )}
             {!loading && !calendarLoading && combinedUpdates.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-5 py-10 text-center text-slate-300">
                 No updates yet. Be the first to post.
@@ -845,6 +1283,10 @@ export default function Home() {
                       const isSavingCalendar = calendarSavingId === updateId;
                       const calendarLink = calendarSuccess[updateId];
                       const hasCalendarEvent = Boolean(calendarLink);
+                      const messageText = update.message || "No description provided.";
+                      const canExpandMessage = isExpandableUpdateMessage(messageText);
+                      const isMessageExpanded = expandedUpdateId === updateId;
+                      const showCollapsedMessage = canExpandMessage && !isMessageExpanded;
                       const calendarButtonClass = hasCalendarEvent
                         ? "rounded-full border border-emerald-300/40 bg-emerald-500/10 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-100"
                         : "rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-sky-100 transition hover:border-sky-200/60 hover:bg-sky-500/20";
@@ -881,9 +1323,27 @@ export default function Home() {
                               )}
                             </div>
                           </div>
-                          <p className="text-sm leading-relaxed text-slate-200">
-                            {update.message || "No description provided."}
-                          </p>
+                          <div>
+                            <p
+                              className={`text-sm leading-relaxed text-slate-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${
+                                showCollapsedMessage ? "line-clamp-5" : ""
+                              }`}
+                            >
+                              {messageText}
+                            </p>
+                            {canExpandMessage && (
+                              <button
+                                type="button"
+                                aria-expanded={isMessageExpanded}
+                                onClick={() =>
+                                  setExpandedUpdateId(isMessageExpanded ? null : updateId)
+                                }
+                                className="mt-2 inline-flex items-center rounded-full border border-emerald-200/30 bg-emerald-900/35 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-900/55"
+                              >
+                                {isMessageExpanded ? "Close" : "Expand"}
+                              </button>
+                            )}
+                          </div>
                           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-300">
                             {update.happensAt && (
                               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 px-3 py-1 text-emerald-100">
@@ -988,7 +1448,7 @@ export default function Home() {
           </div>
 
           {showFavorites && (
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-900/10 p-5 shadow-xl shadow-black/30 backdrop-blur">
+            <div className="min-w-0 rounded-2xl border border-amber-300/20 bg-amber-900/10 p-5 shadow-xl shadow-black/30 backdrop-blur">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-amber-50">Favorite projects</h2>
                 {favoritesLoading ? (
@@ -1375,5 +1835,24 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+function HomeFallback() {
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <ParticleBackground />
+      <main className="relative z-10 mx-auto max-w-5xl px-5 py-10 sm:px-8">
+        <p className="text-sm text-slate-300">Loading portal...</p>
+      </main>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<HomeFallback />}>
+      <HomeContent />
+    </Suspense>
   );
 }

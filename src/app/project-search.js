@@ -49,6 +49,15 @@ function useDebounce(value, delay) {
   return debouncedValue;
 }
 
+function logClientError(message, error, meta = {}) {
+  try {
+    // Keep client logging non-fatal and structured.
+    console.error(message, { error, ...meta });
+  } catch {
+    // Swallow logging errors to avoid breaking UX flows.
+  }
+}
+
 export default function ProjectSearch() {
   const { data: session } = useSession();
   const [projects, setProjects] = useState([]);

@@ -3,6 +3,14 @@
 import { signIn, signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+
+const GOOGLE_AUTH_PARAMS = {
+  prompt: "consent select_account",
+  access_type: "offline",
+  scope:
+    "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events",
+};
 
 export default function UserMenu() {
   const { data: session, status } = useSession();
@@ -80,30 +88,30 @@ export default function UserMenu() {
           <div className="h-px bg-white/10" />
           {session?.user && (
             <>
-              <a
+              <Link
                 href="/profile"
                 className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
                 role="menuitem"
               >
                 My profile
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/directory"
                 className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
                 role="menuitem"
               >
                 Employee directory
-              </a>
+              </Link>
             </>
           )}
           {session?.user?.role === "admin" && (
-            <a
+            <Link
               href="/admin/users"
               className="mt-1 block rounded-xl px-3 py-2 text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"
             >
               Manage users
-            </a>
+            </Link>
           )}
           {session ? (
             <button
@@ -120,7 +128,7 @@ export default function UserMenu() {
             <button
               type="button"
               onClick={() => {
-                signIn("google", { callbackUrl: "/", prompt: "select_account" });
+                signIn("google", { callbackUrl: "/" }, GOOGLE_AUTH_PARAMS);
               }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"

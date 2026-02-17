@@ -125,7 +125,7 @@ export default function EditProfilePage({ params }) {
         <div className="mx-auto max-w-3xl space-y-4 rounded-2xl border border-white/10 bg-slate-900/70 p-6 shadow-lg">
           <h1 className="text-xl font-semibold text-white">Editing is restricted</h1>
           <p className="text-sm text-slate-300">
-            You can only edit your own profile. You are viewing another user's profile.
+            You can only edit your own profile. You are viewing another user profile.
           </p>
           <Link
             href={viewHref}

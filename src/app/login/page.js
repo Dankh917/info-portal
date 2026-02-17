@@ -4,6 +4,13 @@ import { signIn, useSession } from "next-auth/react";
 import { useEffect } from "react";
 import ParticleBackground from "../particle-background";
 
+const GOOGLE_AUTH_PARAMS = {
+  prompt: "consent select_account",
+  access_type: "offline",
+  scope:
+    "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events",
+};
+
 export default function LoginPage() {
   const { data: session, status } = useSession();
 
@@ -32,7 +39,7 @@ export default function LoginPage() {
           type="button"
           disabled={isLoading}
           onClick={() =>
-            signIn("google", { callbackUrl: "/", prompt: "select_account" })
+            signIn("google", { callbackUrl: "/" }, GOOGLE_AUTH_PARAMS)
           }
           className="inline-flex items-center justify-center gap-3 rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-emerald-950 transition hover:scale-[1.01] hover:bg-emerald-300 disabled:scale-100 disabled:cursor-not-allowed disabled:bg-emerald-400/50"
         >

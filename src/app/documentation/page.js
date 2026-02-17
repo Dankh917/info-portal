@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ParticleBackground from "../particle-background";
@@ -8,7 +8,7 @@ import styles from "../../lib/documentation.module.css";
 
 const acceptedTypes = ".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf";
 
-export default function Documentation() {
+function DocumentationContent() {
   const searchParams = useSearchParams();
   const highlightedId = searchParams.get('highlight');
   const highlightRef = useRef(null);
@@ -81,26 +81,26 @@ export default function Documentation() {
 
   const getHierarchyBadge = (doc) => {
     if (doc.isPrivate) {
-      return <span className={`${styles.badge} ${styles.badgePrivate}`}>🔒 Private</span>;
+      return <span className={`${styles.badge} ${styles.badgePrivate}`}>Private</span>;
     }
     const level = doc.hierarchyLevel ?? 3;
     switch (level) {
       case 0:
-        return <span className={`${styles.badge} ${styles.badgeAdmin}`}>🔐 Admin</span>;
+        return <span className={`${styles.badge} ${styles.badgeAdmin}`}>Admin</span>;
       case 1:
-        return <span className={`${styles.badge} ${styles.badgeManager}`}>👔 Managers</span>;
+        return <span className={`${styles.badge} ${styles.badgeManager}`}>Managers</span>;
       case 2:
         const roles = doc.accessRoles && doc.accessRoles.length > 0 
           ? doc.accessRoles.join(", ") 
           : "Same Role";
         return (
           <span className={`${styles.badge} ${styles.badgeRole}`} title={roles}>
-            👥 Role: {roles}
+            Role: {roles}
           </span>
         );
       case 3:
       default:
-        return <span className={`${styles.badge} ${styles.badgePublic}`}>🌐 Public</span>;
+        return <span className={`${styles.badge} ${styles.badgePublic}`}>Public</span>;
     }
   };
 
@@ -173,36 +173,35 @@ export default function Documentation() {
 
   useEffect(() => {
     loadDocuments();
-    // Load session to check user role
-    const loadSession = async () => {
+    const loadSessionAndProjects = async () => {
       try {
         const res = await fetch("/api/auth/session");
         const data = await res.json();
         setSession(data);
-      } catch (err) {
-        console.error("Failed to load session:", err);
-      }
-    };
-    loadSession();
+        const currentUserId = data?.user?.id || "";
 
-    // Load user's projects
-    const loadProjects = async () => {
-      try {
-        const res = await fetch("/api/projects", { cache: "no-store" });
-        const data = await res.json();
-        if (res.ok) {
-          // Filter to only projects user is assigned to
-          const userProjects = (data.projects || []).filter(proj => {
-            const assignments = proj.assignments || [];
-            return assignments.some(a => a.userId);
+        const projectsRes = await fetch("/api/projects", { cache: "no-store" });
+        const projectsData = await projectsRes.json();
+        if (projectsRes.ok) {
+          // Keep only projects that include this user as an assignee.
+          const userProjects = (projectsData.projects || []).filter((proj) => {
+            const assignments = Array.isArray(proj.assignments) ? proj.assignments : [];
+            return assignments.some((a) => {
+              const assignmentUserId =
+                typeof a?.userId === "string" ? a.userId : a?.userId?.toString?.();
+              return Boolean(currentUserId) && assignmentUserId === currentUserId;
+            });
           });
           setProjects(userProjects);
+        } else {
+          setProjects([]);
         }
       } catch (err) {
-        console.error("Failed to load projects:", err);
+        console.error("Failed to load session/projects:", err);
+        setProjects([]);
       }
     };
-    loadProjects();
+    loadSessionAndProjects();
   }, []);
 
   // Scroll to highlighted document when documents load
@@ -342,7 +341,7 @@ export default function Documentation() {
                     }}
                     className={styles.select}
                   >
-                    <option value="private">🔒 Private (Only visible to you)</option>
+                    <option value="private">Private (Only visible to you)</option>
                     {canUploadToLevel(0) && <option value="0">Level 0 - Admin Only</option>}
                     {canUploadToLevel(1) && <option value="1">Level 1 - PR Managers</option>}
                     <option value="2">Level 2 - Same Role</option>
@@ -464,7 +463,7 @@ export default function Documentation() {
                                 <span>{doc.title || doc.originalName}</span>
                                 {doc.projectId && isUserProject && (
                                   <span className={styles.projectBadge}>
-                                    📁 {getProjectName(doc.projectId)}
+                                    Project: {getProjectName(doc.projectId)}
                                   </span>
                                 )}
                               </div>
@@ -526,7 +525,7 @@ export default function Documentation() {
           {/* Private Documents Section */}
           {!loading && documents.filter(doc => doc.isPrivate).length > 0 && (
             <section className={`${styles.card} ${styles.privateCard}`}>
-              <h2 className={styles.sectionTitle}>🔒 My Private Files</h2>
+              <h2 className={styles.sectionTitle}>My Private Files</h2>
               <p className={styles.sectionLead}>
                 Files visible only to you. Not shown on your profile.
               </p>
@@ -590,5 +589,24 @@ export default function Documentation() {
         </div>
       </header>
     </div>
+  );
+}
+
+function DocumentationFallback() {
+  return (
+    <div className={styles.container}>
+      <ParticleBackground />
+      <div className={styles.loadingState}>
+        <p>Loading documentation...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function Documentation() {
+  return (
+    <Suspense fallback={<DocumentationFallback />}>
+      <DocumentationContent />
+    </Suspense>
   );
 }

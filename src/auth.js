@@ -6,6 +6,54 @@ import { logError } from "@/lib/logger";
 
 const dbName = process.env.MONGODB_DB || "info-portal";
 
+function toObjectId(value) {
+  if (!value) return value;
+  if (ObjectId.isValid(value)) {
+    return new ObjectId(value);
+  }
+  return value;
+}
+
+async function syncGoogleAccount(user, account) {
+  if (!user?.id || !account?.providerAccountId) return;
+
+  const client = await clientPromise;
+  const db = client.db(dbName);
+  const filter = {
+    provider: "google",
+    providerAccountId: account.providerAccountId,
+  };
+
+  const fieldsToSet = {
+    userId: toObjectId(user.id),
+    type: account.type,
+    provider: "google",
+    providerAccountId: account.providerAccountId,
+    access_token: account.access_token,
+    expires_at: account.expires_at,
+    scope: account.scope,
+    token_type: account.token_type,
+    id_token: account.id_token,
+    session_state: account.session_state,
+  };
+
+  const setPayload = Object.fromEntries(
+    Object.entries(fieldsToSet).filter(
+      ([, value]) => value !== undefined && value !== null && value !== ""
+    )
+  );
+
+  if (account.refresh_token) {
+    setPayload.refresh_token = account.refresh_token;
+  }
+
+  await db.collection("accounts").updateOne(
+    filter,
+    { $set: setPayload },
+    { upsert: true }
+  );
+}
+
 export const authOptions = {
   adapter: MongoDBAdapter(clientPromise, { databaseName: dbName }),
   providers: [
@@ -30,6 +78,23 @@ export const authOptions = {
     strategy: "jwt",
   },
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider !== "google") {
+        return true;
+      }
+
+      try {
+        await syncGoogleAccount(user, account);
+      } catch (error) {
+        await logError("Failed to sync Google account on sign in", error, {
+          userId: user?.id,
+          email: user?.email,
+          providerAccountId: account?.providerAccountId,
+        });
+      }
+
+      return true;
+    },
     async jwt({ token, user }) {
       const normalizeDepartments = (value) => {
         if (Array.isArray(value)) {
