@@ -37,6 +37,9 @@ export default function RootLayout({ children }) {
                   <Link href="/" className="app-nav__link">
                     Home
                   </Link>
+                  <Link href="/personal-helper" className="app-nav__link">
+                    Personal Helper
+                  </Link>
                   <Link href="/documentation" className="app-nav__link">
                     Documents
                   </Link>
