@@ -107,11 +107,13 @@ These are highest priority before your executive call.
 
 ## 3. AI Feature Roadmap
 
-1. Executive Briefing Agent
+1. [x] Executive Briefing Agent
    - Daily "what matters today" summary from updates, projects, and calendar.
+   - Status: Done
 
-2. Ask-the-Portal Assistant
+2. [x] Ask-the-Portal Assistant
    - Natural-language Q&A over docs, updates, projects, and directory with citations.
+   - Status: Done
 
 3. Meeting-to-Action Agent
    - Convert meeting notes/calendar context into draft updates and assignments.
