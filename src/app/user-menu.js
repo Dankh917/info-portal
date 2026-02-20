@@ -128,7 +128,7 @@ export default function UserMenu() {
             <button
               type="button"
               onClick={() => {
-                signIn("google", { callbackUrl: "/" }, GOOGLE_AUTH_PARAMS);
+                signIn("google", { callbackUrl: pathname || "/" }, GOOGLE_AUTH_PARAMS);
               }}
               className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[0.75rem] text-slate-100 transition hover:bg-white/10"
               role="menuitem"

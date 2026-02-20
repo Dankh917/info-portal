@@ -7,15 +7,23 @@ import { logError } from "@/lib/logger";
 const dbName = process.env.MONGODB_DB || "info-portal";
 
 function toObjectId(value) {
-  if (!value) return value;
+  if (!value) return null;
+  if (value instanceof ObjectId) {
+    return value;
+  }
   if (ObjectId.isValid(value)) {
     return new ObjectId(value);
   }
-  return value;
+  return null;
 }
 
 async function syncGoogleAccount(user, account) {
   if (!user?.id || !account?.providerAccountId) return;
+  const userObjectId = toObjectId(user.id);
+  if (!userObjectId) {
+    // During first OAuth callback, user.id may be a provider id before account linkage.
+    return;
+  }
 
   const client = await clientPromise;
   const db = client.db(dbName);
@@ -25,7 +33,7 @@ async function syncGoogleAccount(user, account) {
   };
 
   const fieldsToSet = {
-    userId: toObjectId(user.id),
+    userId: userObjectId,
     type: account.type,
     provider: "google",
     providerAccountId: account.providerAccountId,
@@ -50,12 +58,59 @@ async function syncGoogleAccount(user, account) {
   await db.collection("accounts").updateOne(
     filter,
     { $set: setPayload },
-    { upsert: true }
+    { upsert: false }
   );
 }
 
+function createSafeAdapter() {
+  const baseAdapter = MongoDBAdapter(clientPromise, { databaseName: dbName });
+
+  return {
+    ...baseAdapter,
+    async getUserByAccount(providerProviderAccountId) {
+      try {
+        return await baseAdapter.getUserByAccount(providerProviderAccountId);
+      } catch (error) {
+        const message = error?.message || "";
+        const isInvalidObjectIdError =
+          error?.name === "BSONError" ||
+          message.includes("string of 12 bytes") ||
+          message.includes("24 hex characters");
+
+        if (!isInvalidObjectIdError) {
+          throw error;
+        }
+
+        await logError("Detected malformed account userId in OAuth lookup", error, {
+          provider: providerProviderAccountId?.provider,
+          providerAccountId: providerProviderAccountId?.providerAccountId,
+        });
+
+        const provider = providerProviderAccountId?.provider;
+        const providerAccountId = providerProviderAccountId?.providerAccountId;
+        if (provider && providerAccountId) {
+          try {
+            const client = await clientPromise;
+            await client
+              .db(dbName)
+              .collection("accounts")
+              .deleteOne({ provider, providerAccountId });
+          } catch (cleanupError) {
+            await logError("Failed to clean malformed OAuth account link", cleanupError, {
+              provider,
+              providerAccountId,
+            });
+          }
+        }
+
+        return null;
+      }
+    },
+  };
+}
+
 export const authOptions = {
-  adapter: MongoDBAdapter(clientPromise, { databaseName: dbName }),
+  adapter: createSafeAdapter(),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
